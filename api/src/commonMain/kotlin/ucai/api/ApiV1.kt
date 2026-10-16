@@ -1,6 +1,6 @@
 package ucai.api
 
-/** API constants shared by the kernel and controllers. */
+/** API constants shared by the kernel and controllers. Kept as an alias of [ApiPaths.BASE]. */
 object ApiV1 {
-    const val BASE_PATH = "/api/v1"
+    const val BASE_PATH = ApiPaths.BASE
 }
