@@ -31,7 +31,7 @@ const SRC_RIDERS = 'ucai-riders';
 /** Label sits this far right of the group head, px. */
 const LABEL_DX = 12;
 /** Zoom the camera goes to when it starts following, unless already closer. */
-const FOLLOW_ZOOM = 12.5;
+const FOLLOW_ZOOM = 12;
 /** A group label that would be pushed further than this from its group is hidden. */
 const MAX_LABEL_SHIFT_PX = 70;
 
@@ -344,7 +344,9 @@ export class RaceMap {
     if (!this.ready) {
       // The slot may have been resized by the grid since the map was created.
       map.resize();
-      this.fitCourse(false);
+      const center = this.follow.kind !== 'none' && this.last ? this.followCenter(this.last, spreadRiders(course.points, this.last, this.spacing())) : null;
+      if (center) map.jumpTo({ center, zoom: Math.max(map.getZoom(), FOLLOW_ZOOM) });
+      else this.fitCourse(false);
     }
     this.ready = true;
     this.layoutClimbs();

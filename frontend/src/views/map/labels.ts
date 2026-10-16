@@ -105,6 +105,7 @@ export function visibleBoxes(boxes: readonly Rect[], gapPx = 4): boolean[] {
 export type FollowTarget = { kind: 'none' } | { kind: 'lead' } | { kind: 'rider'; riderId: number };
 
 export const FOLLOW_NONE: FollowTarget = { kind: 'none' };
+export const FOLLOW_LEAD: FollowTarget = { kind: 'lead' };
 
 /**
  * The group the camera follows, or null (nothing to follow, the rider has finished, or the whole race

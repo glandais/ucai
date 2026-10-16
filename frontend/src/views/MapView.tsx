@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RaceMeta } from '../replay/meta';
 import { riderShortName } from '../replay/meta';
 import type { RaceSnapshot } from '../replay/source';
-import { followedGroup, FOLLOW_NONE, pelotonId, type FollowTarget } from './map/labels';
+import { followedGroup, FOLLOW_LEAD, FOLLOW_NONE, pelotonId, type FollowTarget } from './map/labels';
 import { RaceMap } from './map/RaceMap';
 import './map/MapView.css';
 
@@ -22,7 +22,8 @@ export function MapView({ meta, snapshot }: MapViewProps) {
   const mapRef = useRef<RaceMap | null>(null);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
-  const [follow, setFollow] = useState<FollowTarget>(FOLLOW_NONE);
+  // TV style: the camera follows the head of the race until the user picks something else.
+  const [follow, setFollow] = useState<FollowTarget>(FOLLOW_LEAD);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -70,7 +71,7 @@ export function MapView({ meta, snapshot }: MapViewProps) {
         >
           Whole course
         </button>
-        <button type="button" className={leadActive ? 'active' : ''} aria-pressed={leadActive} onClick={() => setFollow(leadActive ? FOLLOW_NONE : { kind: 'lead' })}>
+        <button type="button" className={leadActive ? 'active' : ''} aria-pressed={leadActive} onClick={() => setFollow(leadActive ? FOLLOW_NONE : FOLLOW_LEAD)}>
           Follow leaders
         </button>
         {followLabel && (
