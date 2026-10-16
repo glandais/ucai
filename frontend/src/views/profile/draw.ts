@@ -190,12 +190,14 @@ export function drawStatic(ctx: CanvasRenderingContext2D, meta: RaceMeta, g: Geo
   ctx.lineTo(scale.right, Math.round(scale.bottom) + 0.5);
   ctx.stroke();
   const step = kmStep(scale.spanM, rect.width);
+  ctx.font = font(t, 10, 700);
+  const finishLabelW = ctx.measureText(formatKm(scale.totalM)).width;
   ctx.font = font(t, 10);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (const km of ticks(scale.startM / 1000, scale.totalM / 1000, step)) {
     const x = Math.round(scale.x(km * 1000)) + 0.5;
-    if (scale.right - x < 40 || x - rect.left < (scale.startM > 0 ? 12 : -1)) continue;
+    if (scale.right - x < finishLabelW + 16 || x - rect.left < (scale.startM > 0 ? 12 : -1)) continue;
     ctx.strokeStyle = t.muted;
     ctx.beginPath();
     ctx.moveTo(x, scale.bottom);
@@ -351,14 +353,14 @@ export function drawOverlay(
     ctx.fillText(tag, tx + tw / 2, scale.bottom + 10);
   }
 
-  // Finished riders, on the finish post.
+  // Finished riders, at the foot of the finish post (group bubbles stand above the profile, never down there).
   const finished = snapshot.finishedRiderIds.length;
   if (finished > 0) {
     const label = `${finished} finished`;
     ctx.font = font(t, 10, 700);
     const w = ctx.measureText(label).width + 10;
-    const x = scale.right - 4 - w;
-    const y = rect.top + 2;
+    const x = scale.right - 16 - w; // clear of a group bubble standing on the line
+    const y = scale.bottom - 19;
     ctx.fillStyle = t.text;
     roundRect(ctx, x, y, w, 15, 3);
     ctx.fill();
