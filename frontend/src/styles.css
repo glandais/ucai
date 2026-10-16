@@ -1,0 +1,234 @@
+/* Global theme and the fixed replay layout (owned by App). Views style themselves in views/<View>.css. */
+:root {
+  --bg: #0b0f17;
+  --panel: #131a26;
+  --panel-2: #1b2433;
+  --line: #2a3547;
+  --text: #f2f5fa;
+  --muted: #8d99ab;
+  --accent: #ffd400;
+  --accent-text: #111111;
+  --danger: #ff6b6b;
+  --font: 'Inter', 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --header-h: 52px;
+  --profile-h: 190px;
+  --playback-h: 56px;
+  --side-w: 360px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+}
+
+/* --- Race list ------------------------------------------------------------------------------------ */
+
+.race-list {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 16px;
+}
+
+.race-list h1 {
+  font-size: 32px;
+  letter-spacing: 0.04em;
+}
+
+.race-list h1 span {
+  color: var(--accent);
+  font-weight: 400;
+}
+
+.race-list h2 {
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-top: 32px;
+}
+
+.race-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.race-list th,
+.race-list td {
+  text-align: left;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.race-list th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.file-button {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px dashed var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.file-button input {
+  display: none;
+}
+
+/* --- Replay layout -------------------------------------------------------------------------------- */
+
+.replay {
+  display: grid;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) var(--side-w);
+  grid-template-rows: var(--header-h) minmax(0, 1fr) minmax(0, 1fr) var(--profile-h) var(--playback-h);
+  grid-template-areas:
+    'header header'
+    'map groups'
+    'map events'
+    'profile profile'
+    'playback playback';
+}
+
+.replay-header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.replay-header h1 {
+  font-size: 20px;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.replay-header .spacer {
+  flex: 1;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+
+.badge.accent {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.slot {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.slot-map {
+  grid-area: map;
+}
+
+.slot-groups {
+  grid-area: groups;
+  border-left: 1px solid var(--line);
+}
+
+.slot-events {
+  grid-area: events;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+
+.slot-profile {
+  grid-area: profile;
+  border-top: 1px solid var(--line);
+}
+
+.slot-playback {
+  grid-area: playback;
+}
+
+.slot-results {
+  position: absolute;
+  inset: 24px;
+  z-index: 10;
+  overflow: auto;
+  background: rgba(11, 15, 23, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* Minimal placeholder rendering, replaced by each view's own implementation. */
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 12px;
+  overflow: auto;
+  color: var(--muted);
+}
+
+.placeholder strong {
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --side-w: 300px;
+    --profile-h: 160px;
+  }
+}

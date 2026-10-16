@@ -1,0 +1,117 @@
+.playback {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  padding: 0 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.playback button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.playback button:hover {
+  border-color: var(--accent);
+}
+
+.playback-play {
+  width: 40px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.playback-speeds {
+  display: flex;
+  gap: 2px;
+}
+
+.playback-speeds button {
+  min-width: 40px;
+  height: 28px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.playback-speeds button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.playback-time {
+  min-width: 64px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.playback-time.end {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.playback-track {
+  position: relative;
+  flex: 1;
+  height: 32px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.playback-track:focus-visible .playback-rail {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.playback-rail,
+.playback-fill {
+  position: absolute;
+  top: 14px;
+  height: 4px;
+  left: 0;
+  border-radius: 2px;
+}
+
+.playback-rail {
+  right: 0;
+  background: var(--line);
+}
+
+.playback-fill {
+  background: var(--accent);
+}
+
+.playback-mark {
+  position: absolute;
+  top: 6px;
+  width: 2px;
+  height: 20px;
+  margin-left: -1px;
+  opacity: 0.85;
+}
+
+.playback-mark.mark-group_split {
+  top: 10px;
+  height: 12px;
+  opacity: 0.6;
+}
+
+.playback-thumb {
+  position: absolute;
+  top: 8px;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 50%;
+  background: var(--text);
+  box-shadow: 0 0 0 3px var(--accent);
+  pointer-events: none;
+}
