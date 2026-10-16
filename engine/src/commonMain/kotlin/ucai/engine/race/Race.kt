@@ -68,6 +68,7 @@ class Race(
     override val groups: List<GroupView> get() = groupList
     private val eventLog = mutableListOf<RaceEvent>()
     override val events: List<RaceEvent> get() = eventLog
+    override fun gapAt(distM: Double): Double = passTimes.gapAt(distM)
 
     private val observers = mutableListOf<RaceObserver>()
     private val sinceObserver = mutableListOf<RaceEvent>()
@@ -88,6 +89,9 @@ class Race(
     private var finishedCount = 0
 
     private val finishM: Double get() = course.distanceM
+
+    /** When the head of the race passed each course point: real time gaps ([gapAt]). */
+    private val passTimes = PassTimes(DoubleArray(course.points.size) { course.points[it].distM })
     private val dt = PhysicsConstants.DT
 
     init {
@@ -164,14 +168,13 @@ class Race(
 
     /** Public snapshot (TV view): no private numbers. */
     fun snapshot(): Snapshot {
-        val lead = groupList.firstOrNull()?.headDistM ?: 0.0
         return Snapshot(
             tick = tick,
             raceTimeS = raceTimeS,
             riders = all.map { SnapshotRider(it.id, it.distM, it.speed, it.groupId, it.rankInGroup) },
             groups = groupList.map { g ->
                 val f = g.front
-                GroupSummary(g.id, f.distM, g.size, (lead - f.distM) / max(1.0, f.speed))
+                GroupSummary(g.id, f.distM, g.size, gapAt(f.distM))
             },
         )
     }
@@ -338,6 +341,8 @@ class Race(
             r.phys.tick(r.power, dt)
         }
         tick++
+        // Before the finish clamps the finishers' distance: the head's real position at the end of the tick.
+        passTimes.advance(tick.toDouble(), active.maxOfOrNull { it.distM } ?: 0.0)
 
         // 5. Crossings: km to go, summits, finish (interpolated between ticks).
         crossings(active)

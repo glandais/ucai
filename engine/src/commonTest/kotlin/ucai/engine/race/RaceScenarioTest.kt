@@ -48,6 +48,45 @@ class RaceScenarioTest {
         assertEquals(RiderStatus.FINISHED, race.rider(attacker).status)
     }
 
+    /**
+     * `GroupSummary.gapS` is a real time gap: when the head of the race passed the group's position. The attacker
+     * goes on the flat, crosses a 2 km climb at 8 % and is back on the flat while the peloton climbs: distance ÷ the
+     * peloton's climbing speed (the old `gapS`) would inflate the gap.
+     */
+    @Test
+    fun snapshotGapIsRealTimeGap() {
+        val riders = Fixtures.riders(20) + RaceEntrant(attacker, "A", Fixtures.STRONG)
+        val course = Fixtures.course(30_000.0) { d -> if (d >= 15_000.0 && d < 17_000.0) 0.08 else 0.0 }
+        val race = Race(course, riders, seed = 13, config = easyPeloton)
+        val log = TickLog()
+        race.addObserver(log)
+        var attacked = false
+        var checked = 0
+        runScripted(race) { dp, r ->
+            val snap = r.snapshot()
+            val head = r.rider(attacker)
+            val pel = snap.groups.maxBy { it.size }
+            if (attacked && snap.groups.size >= 2 && head.distM > 17_300.0 && pel.headDistM in 15_200.0..16_800.0) {
+                // When the attacker passed the peloton's position, from the tick log.
+                val passed = log.frames.first { it.dist.getValue(attacker) >= pel.headDistM }
+                val before = log.frames.first { it.tick == passed.tick - 1 }
+                val d0 = before.dist.getValue(attacker)
+                val d1 = passed.dist.getValue(attacker)
+                val t = before.tick + (pel.headDistM - d0) / (d1 - d0)
+                assertEquals(dp.tick - t, pel.gapS, 0.05)
+                val pelSpeed = snap.riders.filter { it.groupId == pel.id }.maxBy { it.distM }.speed
+                assertTrue((head.distM - pel.headDistM) / pelSpeed > 1.3 * pel.gapS, "distance ÷ speed is inflated")
+                checked++
+            }
+            if (!attacked && dp.tick >= 60) {
+                attacked = true
+                mapOf("A" to listOf(Order(attacker, RiderMode.ATTACK, intensity = 1.0, durationS = 60)))
+            } else emptyMap()
+        }
+        assertTrue(checked > 0, "the attacker climbed while the peloton was on the flat")
+        assertEquals(0.0, race.snapshot().groups.firstOrNull()?.gapS ?: 0.0, 1e-9)
+    }
+
     @Test
     fun attackGetsCaught() {
         val riders = Fixtures.riders(15) + RaceEntrant(attacker, "A", Fixtures.WEAK) +

@@ -45,6 +45,11 @@ interface RaceView {
     val groups: List<GroupView>
     /** Every event since the start, in emission order. */
     val events: List<RaceEvent>
+    /**
+     * Real time gap (s) of a point at [distM] behind the head of the race: how long ago the furthest rider (finished
+     * riders included, so the winner once he is in) passed it. 0 at or ahead of the head. `GroupSummary.gapS`.
+     */
+    fun gapAt(distM: Double): Double
 }
 
 /**

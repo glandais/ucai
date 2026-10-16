@@ -255,7 +255,7 @@ export interface SnapshotRider extends FrameRider {
   riderId: number;
 }
 
-/** `gapS` is the time gap to the head of the race (0 for the leading group). */
+/** `gapS` is the real time gap to the head of the race: how long ago the furthest rider passed `headDistM` (0 for the leading group; to the winner once he has finished). */
 export interface GroupSummary {
   id: number;
   headDistM: number;

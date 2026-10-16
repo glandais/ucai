@@ -22,7 +22,10 @@ object SnapshotRiderSerializer : CompactArraySerializer<SnapshotRider>("ucai.api
         SnapshotRider(riderId = int(), distM = double(), speed = double(), groupId = int(), rankInGroup = int())
 }
 
-/** [gapS] is the time gap to the head of the race (0 for the leading group). */
+/**
+ * [gapS] is the real time gap to the head of the race: how long ago the furthest rider passed [headDistM] (0 for the
+ * leading group; once the winner has finished, the gap to the winner, like the results).
+ */
 @Serializable
 data class GroupSummary(
     val id: Int,

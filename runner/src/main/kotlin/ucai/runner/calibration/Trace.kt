@@ -43,8 +43,7 @@ class Trace(
         nextM += stepM
         val byId = race.riders.associateBy { it.id }
         val groups = race.groups.take(5).joinToString(" ") { g ->
-            val f = byId.getValue(g.riderIds.first())
-            val gap = (head.distM - g.headDistM) / f.speed.coerceAtLeast(1.0)
+            val gap = race.gapAt(g.headDistM)
             "${g.size}@${"%.0f".format(Locale.ROOT, gap)}"
         }
         val pel = race.groups.maxByOrNull { it.size }
