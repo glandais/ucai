@@ -105,17 +105,20 @@ fun descentSpeedCap(descending: Double, gradient: Double): Double {
 
 /**
  * Drafting factor on the aero term by [rank] (1 = front) in a group of [groupSize].
- * 1st 1.00, 2nd 0.64, 3rd 0.55, then exponential decay towards a floor that goes from ≈0.50
- * in a tiny group to ≈0.35 in a large peloton (more rows of shelter).
+ * The front rider gets a little shelter from the riders behind him (they push the air: up to
+ * [Tuning.FRONT_SHELTER] off his drag in a big group). 2nd 0.64, 3rd 0.55, then exponential decay towards a floor
+ * that goes from [Tuning.DRAFT_FLOOR_SMALL] in a tiny group to [Tuning.DRAFT_FLOOR_LARGE] in a large peloton (more
+ * rows of shelter).
  */
 fun draftFactor(rank: Int, groupSize: Int): Double {
     val size = max(1, groupSize)
     return when (min(max(1, rank), size)) {
-        1 -> 1.0
+        1 -> 1.0 - Tuning.FRONT_SHELTER * (1.0 - exp(-(size - 1) / Tuning.FRONT_SHELTER_RIDERS))
         2 -> 0.64
         else -> {
-            val floor = 0.35 + 0.15 * exp(-(size - 3) / 20.0)
-            floor + (0.55 - floor) * exp(-(min(rank, size) - 3) / 8.0)
+            val floor = Tuning.DRAFT_FLOOR_LARGE +
+                (Tuning.DRAFT_FLOOR_SMALL - Tuning.DRAFT_FLOOR_LARGE) * exp(-(size - 3) / Tuning.DRAFT_FLOOR_SIZE)
+            floor + (0.55 - floor) * exp(-(min(rank, size) - 3) / Tuning.DRAFT_DECAY_RANKS)
         }
     }
 }

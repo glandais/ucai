@@ -19,6 +19,26 @@ object Tuning {
     /** A `follow` rider with a lower `maxIntensity` sits in and never takes turns. */
     const val ROTATION_MIN_INTENSITY = 0.9
 
+    // --- Drafting (draftFactor) ---
+    /** Aero drag the riders behind take off the front rider in a big group (Blocken et al.: a few %). */
+    const val FRONT_SHELTER = 0.05
+    /** Group size scale of the front shelter (riders behind). */
+    const val FRONT_SHELTER_RIDERS = 3.0
+    /** Draft floor deep in a tiny group and in a large peloton (fraction of the solo aero drag). */
+    const val DRAFT_FLOOR_SMALL = 0.50
+    const val DRAFT_FLOOR_LARGE = 0.25
+    /** Group size scale from the small to the large floor. */
+    const val DRAFT_FLOOR_SIZE = 20.0
+    /** Ranks over which the draft goes from the 3rd wheel (0.55) to the floor. */
+    const val DRAFT_DECAY_RANKS = 8.0
+
+    // --- Terrain (Fatigue.terrainFactor) ---
+    /** Extra power a rider sustains on a climb, fraction of cpEff (0 = same as on the flat). */
+    const val UPHILL_POWER_GAIN = 0.08
+    /** Gradient where the uphill gain starts, and where it is full. */
+    const val UPHILL_FROM_GRADIENT = 0.02
+    const val UPHILL_FULL_GRADIENT = 0.06
+
     // --- Riders out of the race ---
     /** Pace of a `recover` rider alone, fraction of cpEff (batch 1: 0.55). */
     const val RECOVER_SOLO_INTENSITY = 0.7
@@ -27,11 +47,11 @@ object Tuning {
 
     // --- Durability (Fatigue.loss) ---
     /** Energy scale of the durability loss, kJ per kg of rider + bike. */
-    const val DURABILITY_K = 185.0
+    const val DURABILITY_K = 220.0
     /** Exponent: < 1, the loss grows fast at first, then slowly over a 4000–5000 kJ monument. */
     const val DURABILITY_N = 0.7
     /** Work (kJ per kg) before durability costs anything (~200 kJ, the first half hour). */
-    const val DURABILITY_ONSET_KJ_PER_KG = 3.0
+    const val DURABILITY_ONSET_KJ_PER_KG = 5.0
     /** Durability never takes more than this fraction of CP and W′. */
     const val DURABILITY_MAX_LOSS = 0.35
 }

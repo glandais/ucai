@@ -62,16 +62,20 @@ class PhysicsTest {
 
     @Test
     fun draftFactorShape() {
-        assertEquals(1.0, draftFactor(1, 70))
+        // The front rider gets a little shelter from the riders behind (Blocken et al.), none alone.
+        assertEquals(1.0, draftFactor(1, 1))
+        assertEquals(1.0 - Tuning.FRONT_SHELTER, draftFactor(1, 70), 1e-6)
+        assertTrue(draftFactor(1, 70) < draftFactor(1, 4) && draftFactor(1, 4) < draftFactor(1, 2))
         assertEquals(0.64, draftFactor(2, 70))
         assertEquals(0.55, draftFactor(3, 70), 1e-9)
-        var previous = 1.0
+        var previous = draftFactor(1, 70)
         for (r in 1..70) {
             val k = draftFactor(r, 70)
             assertTrue(k <= previous)
             previous = k
         }
-        assertEquals(0.35, draftFactor(70, 70), 0.02)
+        // Deep in a large peloton: a quarter of the solo drag (CFD of a 121-rider peloton finds 5–10 %, Blocken 2018).
+        assertEquals(Tuning.DRAFT_FLOOR_LARGE, draftFactor(70, 70), 0.02)
         assertTrue(draftFactor(5, 5) > draftFactor(5, 70) - 1e-9)
     }
 

@@ -20,6 +20,8 @@ internal class RiderState(val entrant: RaceEntrant, val index: Int, startSpeed: 
     override var power = 0.0
     override val wPrimeBal: Double get() = phys.wPrimeBal
     override val cpEff: Double get() = phys.cpEff
+    /** cpEff on the current terrain ([RiderPhysiology.cpNow]): intensities and caps in the race are fractions of it. */
+    val cpNow: Double get() = phys.cpNow
     override val wPrimeEff: Double get() = phys.wPrimeEff
     override val energyKj: Double get() = phys.energyKj
     override var groupId = 0

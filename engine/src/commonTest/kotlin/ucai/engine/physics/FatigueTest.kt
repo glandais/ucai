@@ -63,6 +63,26 @@ class FatigueTest {
         assertTrue(tired < fresh)
     }
 
+    /** Uphill a rider holds more power for the same effort: the W′ balance is measured against the terrain CP. */
+    @Test
+    fun terrainFactorOnClimbs() {
+        assertEquals(1.0, Fatigue.terrainFactor(0.0))
+        assertEquals(1.0, Fatigue.terrainFactor(-0.08))
+        assertEquals(1.0 + Tuning.UPHILL_POWER_GAIN, Fatigue.terrainFactor(0.09), 1e-9)
+        assertTrue(Fatigue.terrainFactor(0.04) in 1.0..(1.0 + Tuning.UPHILL_POWER_GAIN))
+        assertTrue(Tuning.UPHILL_POWER_GAIN in 0.0..0.1, "3–8 % in the literature")
+
+        val flat = rider()
+        val climb = rider().apply { terrainFactor = Fatigue.terrainFactor(0.07) }
+        assertEquals(flat.cpEff, climb.cpEff, 1e-9)
+        assertEquals(climb.cpEff * climb.terrainFactor, climb.cpNow, 1e-9)
+        repeat(60) {
+            flat.tick(420.0)
+            climb.tick(420.0)
+        }
+        assertTrue(climb.wPrimeBal > flat.wPrimeBal, "420 W costs less W′ on a climb")
+    }
+
     @Test
     fun sprintPowerDependsOnFreshness() {
         val fresh = Fatigue.sprintPower(1400.0, 25_000.0, 25_000.0, loss = 0.0, cpEff = 400.0)

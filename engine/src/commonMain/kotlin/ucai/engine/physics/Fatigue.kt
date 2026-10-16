@@ -57,6 +57,16 @@ object Fatigue {
         return next.coerceIn(0.0, wPrimeEff)
     }
 
+    /**
+     * Uphill, riders hold more power than on the flat for the same effort (lower speed and inertia, more torque per
+     * pedal stroke: field and lab studies find 3–8 % more uphill). 1 below [Tuning.UPHILL_FROM_GRADIENT], rising
+     * linearly to 1 + [Tuning.UPHILL_POWER_GAIN] at [Tuning.UPHILL_FULL_GRADIENT].
+     */
+    fun terrainFactor(gradient: Double): Double {
+        val span = Tuning.UPHILL_FULL_GRADIENT - Tuning.UPHILL_FROM_GRADIENT
+        return 1.0 + Tuning.UPHILL_POWER_GAIN * ((gradient - Tuning.UPHILL_FROM_GRADIENT) / span).coerceIn(0.0, 1.0)
+    }
+
     /** Highest power holdable for [dt]: cpEff plus whatever W′ is left. At W′bal = 0 this is cpEff. */
     fun maxSustainablePower(cpEff: Double, wPrimeBal: Double, dt: Double = PhysicsConstants.DT): Double =
         cpEff + max(0.0, wPrimeBal) / dt
@@ -89,12 +99,20 @@ class RiderPhysiology(
     var wPrimeBal: Double = wPrimeBal
         private set
 
+    /**
+     * Terrain factor on the power the rider sustains right now ([Fatigue.terrainFactor]): above 1 on climbs, where a
+     * rider pushes more watts for the same effort. Set by the race each tick; [cpEff] stays the flat value.
+     */
+    var terrainFactor: Double = 1.0
+
     val loss: Double get() = Fatigue.loss(durability, energyKj, massKg)
     val cpEff: Double get() = cp * (1.0 - loss)
     val wPrimeEff: Double get() = wPrime * (1.0 - loss)
+    /** Critical power on the current terrain: what intensities, caps and the W′ balance are measured against. */
+    val cpNow: Double get() = cpEff * terrainFactor
 
     fun maxSustainablePower(dt: Double = PhysicsConstants.DT): Double =
-        min(Fatigue.maxSustainablePower(cpEff, wPrimeBal, dt), max(cpEff, sprintPower()))
+        min(Fatigue.maxSustainablePower(cpNow, wPrimeBal, dt), max(cpNow, sprintPower()))
 
     fun sprintPower(): Double = Fatigue.sprintPower(pMax, wPrimeBal, wPrimeEff, loss, cpEff)
 
@@ -102,7 +120,7 @@ class RiderPhysiology(
     fun tick(power: Double, dt: Double = PhysicsConstants.DT) {
         val p = max(0.0, power)
         val l = loss
-        wPrimeBal = Fatigue.nextWPrimeBal(wPrimeBal, p, cp * (1.0 - l), wPrime * (1.0 - l), l, dt)
+        wPrimeBal = Fatigue.nextWPrimeBal(wPrimeBal, p, cp * (1.0 - l) * terrainFactor, wPrime * (1.0 - l), l, dt)
         energyKj += p * dt / 1000.0
     }
 }

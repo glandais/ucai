@@ -18,6 +18,7 @@ import ucai.api.Snapshot
 import ucai.api.SnapshotRider
 import ucai.api.Wind
 import ucai.engine.course.Course
+import ucai.engine.physics.Fatigue
 import ucai.engine.physics.PhysicsConstants
 import ucai.engine.physics.RideConditions
 import ucai.engine.physics.airDensity
@@ -295,9 +296,10 @@ class Race(
         check(state == RaceState.RUNNING) { "race not running" }
         val active = all.filter { it.racing }
 
-        // 0. Mode transitions and kernel safeguards.
+        // 0. Mode transitions and kernel safeguards; power on the current terrain.
         for (r in active) {
             r.computed = false
+            r.phys.terrainFactor = Fatigue.terrainFactor(course.gradientAt(r.distM))
             when (r.mode) {
                 RiderMode.ATTACK -> if (tick >= r.attackEndsTick || wPrimeEmpty(r)) {
                     r.mode = RiderMode.PULL
@@ -454,7 +456,7 @@ class Race(
         if (cand.size <= 2) return cand.toSet()
         val vRef = max(g.bodySpeed, config.rotationRefSpeed)
         val ranked = cand.sortedByDescending { r ->
-            r.cpEff / max(1.0, powerAtSpeed(vRef, conditions(r, g.bodyDist, 1.0)))
+            r.cpNow / max(1.0, powerAtSpeed(vRef, conditions(r, g.bodyDist, 1.0)))
         }
         val n = max(2, ceil(cand.size * config.rotationShare).toInt())
         return ranked.take(n).toSet()
@@ -475,12 +477,12 @@ class Race(
         val isPull: (RiderState) -> Boolean = { it.mode == RiderMode.PULL }
         if (q.any(isPull)) {
             val l = turn(g, isPull)
-            return Pace(l, min(l.intensity * l.cpEff, l.phys.maxSustainablePower()), isPull)
+            return Pace(l, min(l.intensity * l.cpNow, l.phys.maxSustainablePower()), isPull)
         }
         val elig: (RiderState) -> Boolean = ::rotationEligible
         if (q.any(elig)) {
             val l = turn(g, elig, strongest = true)
-            return Pace(l, min(min(rotationIntensity(g), l.maxIntensity) * l.cpEff, l.phys.maxSustainablePower()), elig)
+            return Pace(l, min(min(rotationIntensity(g), l.maxIntensity) * l.cpNow, l.phys.maxSustainablePower()), elig)
         }
         val l = q.first()
         g.leader = l
@@ -489,16 +491,16 @@ class Race(
             RiderMode.FOLLOW -> min(config.defaultIntensity, l.maxIntensity)
             else -> config.defaultIntensity
         }
-        return Pace(l, min(intensity * l.cpEff, l.phys.maxSustainablePower())) { false }
+        return Pace(l, min(intensity * l.cpNow, l.phys.maxSustainablePower())) { false }
     }
 
     /** Max power an attached rider spends to stay in the body. */
     private fun attachedCap(r: RiderState): Double {
         val maxSust = r.phys.maxSustainablePower(dt)
         return when (r.mode) {
-            RiderMode.FOLLOW, RiderMode.SPRINT -> min(r.maxIntensity * r.cpEff, maxSust)
+            RiderMode.FOLLOW, RiderMode.SPRINT -> min(r.maxIntensity * r.cpNow, maxSust)
             RiderMode.PULL, RiderMode.ATTACK -> maxSust
-            RiderMode.RECOVER -> min(config.recoverHoldIntensity * r.cpEff, maxSust)
+            RiderMode.RECOVER -> min(config.recoverHoldIntensity * r.cpNow, maxSust)
         }
     }
 
@@ -517,7 +519,7 @@ class Race(
 
         val n = body.size
         val v = g.bodySpeed
-        val c = conditions(leader, g.bodyDist, 1.0)
+        val c = conditions(leader, g.bodyDist, draftFactor(1, n))
         val v1 = crawl(eulerStep(v, pace.power, c, dt, descentSpeedCap(leader.profile.descending, grad)))
         leader.power = min(pace.power, requiredPower(v, v1, c))
         leader.newSpeed = v1
@@ -566,7 +568,7 @@ class Race(
 
     private fun attackPower(r: RiderState): Double {
         val remaining = max(1, r.attackEndsTick - tick)
-        val allowed = min(r.cpEff + r.wPrimeBal / remaining, max(r.cpEff, r.phys.sprintPower()))
+        val allowed = min(r.cpNow + r.wPrimeBal / remaining, max(r.cpNow, r.phys.sprintPower()))
         return r.intensity * allowed
     }
 
@@ -592,13 +594,13 @@ class Race(
 
         val p = when (r.mode) {
             RiderMode.ATTACK -> attackPower(r)
-            RiderMode.PULL -> min(r.intensity * r.cpEff, maxSust)
-            RiderMode.RECOVER -> min(toward(refSpeed), config.recoverSoloIntensity * r.cpEff)
+            RiderMode.PULL -> min(r.intensity * r.cpNow, maxSust)
+            RiderMode.RECOVER -> min(toward(refSpeed), config.recoverSoloIntensity * r.cpNow)
             RiderMode.SPRINT, RiderMode.FOLLOW -> if (r.mode == RiderMode.SPRINT && r.sprintLaunched) {
                 if (leadOut(r)) c = c.copy(kDraft = min(c.kDraft, config.leadOutDraft))
-                min(r.phys.sprintPower() * r.positioningFactor, r.cpEff + r.wPrimeBal / dt)
+                min(r.phys.sprintPower() * r.positioningFactor, r.cpNow + r.wPrimeBal / dt)
             } else {
-                val cap = min(r.maxIntensity * r.cpEff, maxSust)
+                val cap = min(r.maxIntensity * r.cpNow, maxSust)
                 val t = target(r)
                 if (t != null && t.distM >= r.distM) {
                     val gap = t.distM - r.distM
@@ -613,7 +615,7 @@ class Race(
                 } else if (r.distM < refDist) {
                     min(toward(refSpeed + closing(refDist - r.distM)), cap)
                 } else {
-                    min(toward(refSpeed), min(cap, config.waitIntensity * r.cpEff))
+                    min(toward(refSpeed), min(cap, config.waitIntensity * r.cpNow))
                 }
             }
         }
