@@ -12,17 +12,6 @@ export interface GroupLabelText {
   gap: string;
 }
 
-/** The peloton: the largest group on the road with at least 10 riders and a quarter of the riders on the road. */
-export function pelotonId(groups: readonly GroupState[]): number | null {
-  let best: GroupState | null = null;
-  let onRoad = 0;
-  for (const g of groups) {
-    onRoad += g.size;
-    if (!best || g.size > best.size) best = g;
-  }
-  return best && best.size >= 10 && best.size >= onRoad / 4 ? best.id : null;
-}
-
 export function groupLabelText(meta: RaceMeta, snapshot: RaceSnapshot, index: number, peloton: number | null): GroupLabelText {
   const g = snapshot.groups[index]!;
   const someoneFinished = snapshot.finishedRiderIds.length > 0;

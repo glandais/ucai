@@ -25,7 +25,7 @@ npm run dev          # http://localhost:5173, /api is proxied to http://localhos
 | `npm run typecheck` | `tsc` (no emit) |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
 
-Playback keys: space = play/pause; on the focused timeline ←/→ = ∓1 min (shift: 10 min), Home/End.
+Playback keys: space = play/pause (also with a button focused); on the focused timeline ←/→ = ∓1 min (shift: 10 min), Home/End.
 
 Map camera: follows the head of the race by default (TV style); **Whole course** fits the course, a click on a
 group label follows that group, dragging the map stops following. Profile: **Full course** / **Last 50 km**
@@ -70,17 +70,20 @@ caps playback at 13–17 fps: measure with a real GPU (`--ignore-gpu-blocklist -
 src/
   api/        types.ts (DTO mirror), decode.ts (compact arrays), client.ts (REST + replay loading)
   replay/     source.ts (RaceSource seam + snapshot types), model.ts (ReplayModel), clock.ts (playback),
+              live.ts (source → clock wiring, data version), peloton.ts (the one peloton rule),
               meta.ts (RaceMeta, team colors, rider lookups), course.ts (position on course),
               events.ts (event labels/colors/descriptions), format.ts (time, gap, km), fixtures.ts (test replay)
   app/        RaceList.tsx, ReplayView.tsx (fixed layout, one slot per view)
-  views/      one file per slot (see below), each with its own optional views/<View>.css
+  views/      one component per slot (see below): MapView.tsx, ProfileView.tsx, GroupsPanel.tsx (+ .css),
+              EventsList.tsx (+ .css), ResultsTable.tsx (+ .css), PlaybackBar.tsx (+ .css)
+    map/      MapView.css, RaceMap.ts (MapLibre wrapper), labels.ts (group labels, declutter, follow),
+              spread.ts (riders spread inside a group), geo.ts (bounds, course slices)
+    profile/  ProfileView.css, scale.ts, draw.ts, markers.ts, layout.ts, grade.ts
+    panels/   panels.css, groups.ts, events.ts, results.ts (GroupsPanel / EventsList / ResultsTable helpers),
+              RiderName.tsx
   App.tsx     race list → replay view
   styles.css  theme variables (--bg, --panel, --panel-2, --line, --text, --muted, --accent, --accent-text) and layout
 ```
-
-Ownership for parallel work: each view agent edits only `views/<View>.tsx` (+ its own `views/<View>.css`,
-tests and helper files named `views/<View>.*`). `src/replay`, `src/api`, `src/app`, `App.tsx` and
-`styles.css` are shared — don't change their exports; add view-local helpers instead.
 
 ## Data source seam
 
@@ -146,6 +149,8 @@ binary-searched in that rider's (non-decreasing) distances and interpolated betw
 `play` (restarts from `startT` when at the end), `pause`, `toggle`, `setSpeed(1|10|30|60)`, `seek(t)`,
 `setRange(startT, endT)`, `advance(wallSeconds)` (driven by `requestAnimationFrame` while playing).
 Hooks: `usePlaybackClock(startT, endT)` (one clock per component instance), `usePlayback(clock)`.
+`useSourceVersion(source, clock)` (`replay/live.ts`) subscribes to the source: on each notification the clock
+range follows `source.startT/endT` and the returned version changes, so a live source only needs to notify.
 `PLAYBACK_SPEEDS = [1, 10, 30, 60]`.
 
 ## Views (props contract)
@@ -160,6 +165,6 @@ being re-rendered every animation frame while playing (snapshot changes; `meta` 
 | `GroupsPanel` | `{ meta: RaceMeta; snapshot: RaceSnapshot }` | right column, top |
 | `EventsList` | `{ meta: RaceMeta; events: readonly RaceEvent[] /* tick <= t, chronological */; t: number }` | right column, bottom |
 | `ResultsTable` | `{ meta: RaceMeta; results: Classification \| null; t: number; onClose: () => void }` | overlay over the map (header "Results" button, opens itself when the race ends) |
-| `PlaybackBar` | `{ meta: RaceMeta; clock: PlaybackClock; state: PlaybackState; events: readonly RaceEvent[] /* all */ }` | bottom bar (implemented) |
+| `PlaybackBar` | `{ meta: RaceMeta; clock: PlaybackClock; state: PlaybackState; events: readonly RaceEvent[] /* all */ }` | bottom bar |
 
 `ResultsTable` should only list riders with `timeS <= t`, so scrubbing back hides later finishers.

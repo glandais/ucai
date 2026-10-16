@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayback, usePlaybackClock } from '../replay/clock';
 import { formatKm, formatRaceTime } from '../replay/format';
+import { useSourceVersion } from '../replay/live';
 import type { RaceSource } from '../replay/source';
 import { EventsList } from '../views/EventsList';
 import { GroupsPanel } from '../views/GroupsPanel';
@@ -19,7 +20,9 @@ export function ReplayView({ source, onBack }: ReplayViewProps) {
   const { meta } = source;
   const clock = usePlaybackClock(source.startT, source.endT);
   const state = usePlayback(clock);
-  const snapshot = useMemo(() => source.snapshotAt(state.t), [source, state.t]);
+  // Bumped on each source notification (live data); a replay never notifies.
+  const dataVersion = useSourceVersion(source, clock);
+  const snapshot = useMemo(() => source.snapshotAt(state.t), [source, state.t, dataVersion]);
   const events = source.eventsUntil(state.t);
   const [showResults, setShowResults] = useState(false);
 
@@ -30,16 +33,27 @@ export function ReplayView({ source, onBack }: ReplayViewProps) {
     wasFinished.current = snapshot.raceFinished;
   }, [snapshot.raceFinished]);
 
-  // Space bar toggles playback (unless typing or on a button).
+  // Space bar toggles playback, even with a button focused (its click is suppressed); not while typing.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    const typing = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (e.code !== 'Space' || (el && ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(el.tagName))) return;
-      e.preventDefault();
-      clock.toggle();
+      return !!el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || typing(e)) return;
+      e.preventDefault();
+      if (!e.repeat) clock.toggle();
+    };
+    // Buttons activate on Space keyup: cancel it so the focused button is not clicked again.
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !typing(e)) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
   }, [clock]);
 
   return (

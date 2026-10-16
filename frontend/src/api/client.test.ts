@@ -21,6 +21,12 @@ describe('replay decoding', () => {
     expect(r.events[0]!.type).toBe('race_started');
   });
 
+  it('reports truncated gzip and invalid JSON as format errors', async () => {
+    const gz = new Uint8Array(gzipSync(json));
+    await expect(parseReplayBytes(gz.slice(0, Math.floor(gz.length / 2)))).rejects.toThrow('replay: corrupt or truncated gzip data');
+    await expect(parseReplayBytes(new TextEncoder().encode('{"version":'))).rejects.toThrow('replay: not valid JSON');
+  });
+
   it('decodes compact arrays, ignoring extra elements', () => {
     expect(decodeFrameRider([1, 2, 3, 4, 99])).toEqual({ distM: 1, speed: 2, groupId: 3, rankInGroup: 4 });
     expect(decodeSnapshotRider([7, 1, 2, 3, 4])).toEqual({ riderId: 7, distM: 1, speed: 2, groupId: 3, rankInGroup: 4 });

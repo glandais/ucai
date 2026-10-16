@@ -1,4 +1,4 @@
-import { decodeCourse, decodeReplay } from './decode';
+import { ReplayFormatError, decodeCourse, decodeReplay } from './decode';
 import type { Classification, CourseDetail, CourseDetailWire, CourseSummary, RaceDetail, RaceSummary, Replay } from './types';
 
 /** API base; the Vite dev server proxies `/api` to the kernel. */
@@ -55,12 +55,22 @@ export async function parseReplayBytes(buf: ArrayBuffer | Uint8Array): Promise<R
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   let text: string;
   if (isGzip(bytes)) {
-    const stream = new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream('gzip'));
-    text = await new Response(stream).text();
+    try {
+      const stream = new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream('gzip'));
+      text = await new Response(stream).text();
+    } catch {
+      throw new ReplayFormatError('replay: corrupt or truncated gzip data');
+    }
   } else {
     text = new TextDecoder().decode(bytes);
   }
-  return decodeReplay(JSON.parse(text));
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new ReplayFormatError('replay: not valid JSON');
+  }
+  return decodeReplay(json);
 }
 
 /**

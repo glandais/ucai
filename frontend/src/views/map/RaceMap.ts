@@ -4,7 +4,8 @@ import { formatGrade, formatKm } from '../../replay/format';
 import { riderColor, type RaceMeta } from '../../replay/meta';
 import type { GroupState, RaceSnapshot } from '../../replay/source';
 import { courseBounds, courseSlice, metersPerPixel } from './geo';
-import { declutter, followedGroup, FOLLOW_NONE, groupLabelText, labelPriority, pelotonId, visibleBoxes, type FollowTarget, type LabelBox } from './labels';
+import { pelotonId } from '../../replay/peloton';
+import { declutter, followedGroup, FOLLOW_NONE, groupLabelText, labelPriority, visibleBoxes, type FollowTarget, type LabelBox } from './labels';
 import { DOT_RADIUS_STOPS, dotSpacingPx, spacingFor, spreadRiders, type PlacedRider } from './spread';
 
 /**

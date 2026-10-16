@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { RaceMeta } from '../replay/meta';
 import { riderShortName } from '../replay/meta';
 import type { RaceSnapshot } from '../replay/source';
-import { followedGroup, FOLLOW_LEAD, FOLLOW_NONE, pelotonId, type FollowTarget } from './map/labels';
+import { followedGroup, FOLLOW_LEAD, FOLLOW_NONE, type FollowTarget } from './map/labels';
+import { pelotonId } from '../replay/peloton';
 import { RaceMap } from './map/RaceMap';
 import './map/MapView.css';
 

@@ -1,6 +1,7 @@
 import type { GroupState, RaceSnapshot } from '../../replay/source';
 import type { RaceMeta } from '../../replay/meta';
 import { teamColor } from '../../replay/meta';
+import { pelotonIndex } from '../../replay/peloton';
 
 /** Groups with more riders than this are shown collapsed (team breakdown + toggle). */
 export const BIG_GROUP_SIZE = 12;
@@ -11,21 +12,6 @@ export interface GroupLabel {
   title: string;
   /** Secondary tag, e.g. "Head of race" on a peloton that leads the race. */
   tag?: string;
-}
-
-/**
- * Index of the peloton in `groups` (front to back): the largest group, if it holds at least 30 % of the
- * riders on the road and at least 6 riders; −1 otherwise (a fragmented race has no peloton).
- */
-export function pelotonIndex(groups: readonly Pick<GroupState, 'size'>[]): number {
-  const onRoad = groups.reduce((n, g) => n + g.size, 0);
-  let best = -1;
-  groups.forEach((g, i) => {
-    if (best < 0 || g.size > groups[best]!.size) best = i;
-  });
-  if (best < 0) return -1;
-  const size = groups[best]!.size;
-  return size >= 6 && size >= 0.3 * onRoad ? best : -1;
 }
 
 /**

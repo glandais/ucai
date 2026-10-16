@@ -4,7 +4,7 @@ import { decodeReplay } from '../../api/decode';
 import { syntheticReplayWire } from '../../replay/fixtures';
 import { createReplaySource } from '../../replay/model';
 import { buildEventItems, GroupTracker, ordinal, riderList, segmentsText } from './events';
-import { groupLabels, groupSpeed, pelotonIndex, teamCounts } from './groups';
+import { groupLabels, groupSpeed, teamCounts } from './groups';
 import { resultRows } from './results';
 
 const source = () => createReplaySource(decodeReplay(syntheticReplayWire()));
@@ -13,13 +13,6 @@ const sizes = (...s: number[]) => s.map((size) => ({ size }));
 const texts = (events: RaceEvent[]) => buildEventItems(meta, events).map((it) => segmentsText(meta, it.parts));
 
 describe('groups panel helpers', () => {
-  it('finds the peloton as the largest big-enough group', () => {
-    expect(pelotonIndex(sizes(3, 50, 4))).toBe(1);
-    expect(pelotonIndex(sizes(5, 4))).toBe(-1); // too small
-    expect(pelotonIndex(sizes(10, 10, 10, 10, 10, 10))).toBe(-1); // 17 %: fragmented race
-    expect(pelotonIndex([])).toBe(-1);
-  });
-
   it('labels head of race, chasers, peloton and groups behind', () => {
     expect(groupLabels(sizes(2, 50, 3), 0).map((l) => l.title)).toEqual(['Head of race', 'Peloton', 'Group 3']);
     expect(groupLabels(sizes(2, 4, 50), 0).map((l) => l.title)).toEqual(['Head of race', 'Chasers', 'Peloton']);

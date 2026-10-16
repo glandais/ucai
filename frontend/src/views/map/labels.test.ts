@@ -3,7 +3,7 @@ import { decodeReplay } from '../../api/decode';
 import { syntheticReplayWire } from '../../replay/fixtures';
 import { ReplayModel } from '../../replay/model';
 import type { GroupState } from '../../replay/source';
-import { declutter, followedGroup, groupLabelText, labelPriority, pelotonId, visibleBoxes } from './labels';
+import { declutter, followedGroup, groupLabelText, labelPriority, visibleBoxes } from './labels';
 
 const model = new ReplayModel(decodeReplay(syntheticReplayWire()));
 
@@ -23,13 +23,6 @@ const g = (id: number, size: number): GroupState => ({
 });
 
 describe('group labels', () => {
-  it('names the peloton only when it is a real bunch', () => {
-    expect(pelotonId([g(1, 5), g(2, 60), g(3, 5)])).toBe(2);
-    expect(pelotonId([g(1, 5), g(2, 4)])).toBeNull();
-    expect(pelotonId([g(1, 12), g(2, 12), g(3, 12), g(4, 12), g(5, 12)])).toBeNull();
-    expect(pelotonId([])).toBeNull();
-  });
-
   it('labels leaders, chasers and gaps', () => {
     const s = model.snapshotAt(500); // A at 5000 m, B at 4000 m (100 s behind)
     expect(groupLabelText(model.meta, s, 0, null)).toEqual({ title: 'LEADERS', size: 2, gap: '' });
