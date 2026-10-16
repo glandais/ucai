@@ -38,6 +38,18 @@ class FatigueTest {
         assertEquals(Fatigue.MAX_LOSS, Fatigue.loss(0.0, 10_000.0, 70.0))
     }
 
+    /** A monument costs 4000–5000 kJ: the loss keeps growing but stays realistic, and nothing in the first half hour. */
+    @Test
+    fun durabilityOverAMonument() {
+        assertEquals(0.0, Fatigue.loss(durability = 0.5, energyKj = 200.0, massKg = 70.0))
+        val leader = Fatigue.loss(durability = 0.8, energyKj = 4500.0, massKg = 70.0)
+        val domestique = Fatigue.loss(durability = 0.55, energyKj = 5000.0, massKg = 72.0)
+        println("loss at the finish: leader 4500 kJ ${(leader * 100).r1()} %, domestique 5000 kJ ${(domestique * 100).r1()} %")
+        assertTrue(leader in 0.06..0.12, "leader $leader")
+        assertTrue(domestique in 0.18..0.28, "domestique $domestique")
+        assertTrue(Fatigue.loss(0.8, 3000.0, 70.0) < leader, "still growing")
+    }
+
     @Test
     fun accumulatedWorkLowersCpAndSlowsRecovery() {
         val r = rider(durability = 0.5)

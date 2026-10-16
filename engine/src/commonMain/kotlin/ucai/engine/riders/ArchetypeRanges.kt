@@ -56,7 +56,7 @@ data class ArchetypeRanges(
                 Span(1150.0, 1450.0), Span(0.31, 0.34), Span(0.68, 0.85), Span(0.45, 0.90),
             )
             Archetype.SPRINTER -> ArchetypeRanges(
-                Span(75.0, 88.0), Span(4.30, 4.75), Span(335.0, 405.0), Span(27_000.0, 35_000.0),
+                Span(75.0, 88.0), Span(4.50, 4.95), Span(345.0, 415.0), Span(27_000.0, 35_000.0),
                 Span(1450.0, 1700.0), Span(0.32, 0.35), Span(0.60, 0.78), Span(0.45, 0.90),
             )
             Archetype.ROULEUR -> ArchetypeRanges(

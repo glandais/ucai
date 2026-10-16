@@ -3,6 +3,7 @@ package ucai.engine.race
 import ucai.api.Order
 import ucai.api.RaceEvent
 import ucai.api.RiderMode
+import ucai.api.RiderStatus
 import ucai.engine.physics.descentSpeedCap
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -74,11 +75,26 @@ class GroupLogicTest {
         assertEquals((1..9).toSet(), turns.map { it.first }.toSet())
         // All complete turns (not the first nor the last) last 30..60 s.
         turns.drop(1).dropLast(1).forEach { assertTrue(it.second in 30..60, "turn $it") }
-        // The leader at the front does 0.65 × cpEff, followers less.
+        // The leader at the front does the default intensity × cpEff, capped by its maxIntensity (1.0 unordered).
         val f = log.frames[100]
         val lead = f.rank.entries.first { it.value == 1 }.key
-        assertTrue(kotlin.math.abs(f.power.getValue(lead) - 0.65 * race.rider(lead).cpEff) < 15.0, "leader power ${f.power[lead]}")
+        val intensity = minOf(race.config.defaultIntensity, 1.0)
+        assertTrue(kotlin.math.abs(f.power.getValue(lead) - intensity * race.rider(lead).cpEff) < 15.0, "leader power ${f.power[lead]}")
         f.power.filterKeys { it != lead }.values.forEach { assertTrue(it < f.power.getValue(lead)) }
+    }
+
+    /** Stall guard: a rider far too weak for a 22 % ramp crawls up it at the crawl speed instead of stopping. */
+    @Test
+    fun crawlsUpRampsInsteadOfStalling() {
+        val course = Fixtures.course(3_000.0) { d -> if (d in 1_000.0..2_000.0) 0.22 else 0.0 }
+        val cooked = Fixtures.WEAK.copy(massKg = 100.0, cp = 150.0, wPrime = 5_000.0)
+        val race = Race(course, listOf(RaceEntrant(1, "A", cooked)), seed = 1)
+        val log = TickLog().also { race.addObserver(it) }
+        runScripted(race) { dp, _ -> if (dp.decisionId == 0) mapOf("A" to listOf(Order(1, RiderMode.RECOVER))) else emptyMap() }
+        assertEquals(RiderStatus.FINISHED, race.rider(1).status)
+        val onRamp = log.frames.filter { it.dist.getValue(1) in 1_100.0..1_900.0 }
+        assertTrue(onRamp.isNotEmpty())
+        onRamp.forEach { assertTrue(it.speed.getValue(1) >= race.config.crawlSpeed - 1e-9, "speed ${it.speed[1]}") }
     }
 
     /** Descents: speed capped by the leader's skill, followers freewheel, no splits even with poor descenders. */

@@ -14,10 +14,16 @@ import kotlin.test.assertTrue
 class RaceScenarioTest {
     private val attacker = 100
 
+    /**
+     * The attack scenarios assume a peloton riding easy (nobody chases): the tuned default rotation rides at
+     * threshold, where a lone rider at 0.9 × cpEff cannot gain on an equal bunch, so they pin the batch-1 tempo.
+     */
+    private val easyPeloton = RaceConfig(defaultIntensity = 0.65, climbIntensity = 0.65)
+
     @Test
     fun attackStaysAway() {
         val riders = Fixtures.riders(20) + RaceEntrant(attacker, "A", Fixtures.STRONG)
-        val race = Race(Fixtures.course(40_000.0), riders, seed = 11)
+        val race = Race(Fixtures.course(40_000.0), riders, seed = 11, config = easyPeloton)
         var attacked = false
         runScripted(race) { dp, _ ->
             if (!attacked && dp.tick >= 60) {
@@ -79,7 +85,7 @@ class RaceScenarioTest {
     @Test
     fun followWithTargetBridgesAcross() {
         val riders = Fixtures.riders(15) + RaceEntrant(attacker, "A", Fixtures.ROULEUR) + RaceEntrant(300, "C", Fixtures.STRONG)
-        val race = Race(Fixtures.course(25_000.0), riders, seed = 13)
+        val race = Race(Fixtures.course(25_000.0), riders, seed = 13, config = easyPeloton)
         runScripted(race) { dp, _ ->
             if (dp.decisionId == 2) mapOf(
                 "A" to listOf(Order(attacker, RiderMode.ATTACK, intensity = 0.9, durationS = 40)),

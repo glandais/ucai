@@ -3,27 +3,30 @@ package ucai.engine.physics
 import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 /**
  * Durability and W′ model (DESIGN §3 "Fatigue").
  *
- * `loss = (1 − durability) · (energyKj / (massKg · K))²`, capped at [MAX_LOSS].
+ * `loss = (1 − durability) · (max(0, energyKj / massKg − E0) / K)^N`, capped at [MAX_LOSS] (constants in [Tuning]).
  *
- * Calibration of K: the targets are a domestique (durability 0.5, 70 kg) at 2000 kJ losing
- * 10–15 % of CP, and a protected leader (durability ~0.8) losing ~5 % at ~1500 kJ.
- * The quadratic form fixes the ratio of the two losses to (0.5/0.2)·(2000/1500)² ≈ 4.4, so both
- * cannot be hit exactly. K = 53 puts the domestique at 14.5 % (upper part of the range, the
- * mechanic that decides monuments) and the leader at 3.3 % at 1500 kJ; a durability-0.8 leader
- * reaches 5 % around 1850 kJ, and a durability-0.7 leader reaches 4.9 % at 1500 kJ.
+ * The batch-1 form was quadratic, `(energyKj / (massKg · K))²`. It could not hit both calibration targets — a
+ * domestique (durability 0.5, 70 kg) losing 10–15 % of CP at 2000 kJ and a protected leader (0.8) ~5 % at 1500 kJ —
+ * and, worse, a monument costs every rider 4000–5000 kJ (≈ 170 W average for 7 h, like real power files), where the
+ * quadratic form put the whole field at 25–35 %. A concave power law (N = 0.7) after a short onset (E0 = 3 kJ/kg, the
+ * first ~30 min cost nothing) hits both targets (13.9 % and 4.0 %; 5 % for a durability-0.75 leader) and keeps
+ * growing slowly: at the finish a leader (0.8, ~4500 kJ) is at ~9 %, a domestique (0.55, ~5000 kJ) at ~22 %.
  */
 object Fatigue {
-    const val K = 53.0
-    const val MAX_LOSS = 0.35
+    const val K = Tuning.DURABILITY_K
+    const val N = Tuning.DURABILITY_N
+    const val ONSET_KJ_PER_KG = Tuning.DURABILITY_ONSET_KJ_PER_KG
+    const val MAX_LOSS = Tuning.DURABILITY_MAX_LOSS
 
     fun loss(durability: Double, energyKj: Double, massKg: Double): Double {
-        val r = energyKj / (massKg * K)
-        return min(MAX_LOSS, (1.0 - durability.coerceIn(0.0, 1.0)) * r * r)
+        val x = max(0.0, energyKj / massKg - ONSET_KJ_PER_KG) / K
+        return min(MAX_LOSS, (1.0 - durability.coerceIn(0.0, 1.0)) * x.pow(N))
     }
 
     /**

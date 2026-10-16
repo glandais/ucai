@@ -117,7 +117,7 @@ Import pipeline (run once, output committed in `races/courses/<id>.json`):
 | `durability` 0..1 | | how much CP and W′ drop as work accumulates (kJ) — this decides 260 km races |
 | `descending` 0..1 | | max safe speed on descents |
 
-Archetypes generated from a seed: climber, puncheur, sprinter, rouleur, all-rounder, domestique. The rider pool is **fictional** (generated names, fictional teams).
+Archetypes generated from a seed: climber, puncheur, sprinter, rouleur, all-rounder, domestique. The rider pool is **fictional** (generated names, fictional teams). Sprinters keep the lowest CP/kg of the field but at 4.5–4.95 W/kg (rider + bike; first 4.3–4.75), so the best of them can survive the Cipressa and the Poggio.
 
 Public profile: name, team, archetype and **ratings from 1 to 5** (climbing, punch, sprint, endurance, descending). Exact numbers are only given to the rider's own team.
 
@@ -149,6 +149,7 @@ F = m·g·(sin θ + Crr·cos θ) + ½·ρ·CdA·k_draft·(v + v_wind_axial)²
 ```
 
 Integration (explicit Euler): `a = (P·η / max(v, 1 m/s) − F) / m`, capped at **+1.5 m/s²**; `v += a·dt`; `dist += v·dt`.
+- Stall guard: a racing rider never goes below a crawl speed of **1.5 m/s** (≈ 5 km/h, walking the bike). On a 17–22 % ramp a cooked rider's power can be below gravity even at the 1 m/s floor, and he would otherwise stop for good.
 - η = 0.976 drivetrain efficiency, g = 9.81, Crr = 0.004, ρ from elevation (≈1.225 at sea level, −10 % per 1000 m).
 - Wind: one optional constant vector per race (direction + speed, 0 by default). `v_wind_axial` is its component along each segment's heading.
 - The aero time constant (≈10 s at race speed) keeps dt = 1 s stable.
@@ -161,13 +162,13 @@ Integration (explicit Euler): `a = (P·η / max(v, 1 m/s) − F) / m`, capped at
 - **Durability**: accumulated work lowers both CP and W′, and slows W′ recovery:
 
   ```
-  loss       = (1 − durability) · (energyKj / (massKg · K))²      K calibrated, loss capped at 0.35
+  loss       = (1 − durability) · (max(0, energyKj / massKg − E0) / K)^N    E0 = 3 kJ/kg, K = 185 kJ/kg, N = 0.7, capped at 0.35
   cpEff      = cp · (1 − loss)
   wPrimeEff  = wPrime · (1 − loss)
   τ_recovery = τ_base · (1 + loss)
   ```
 
-  Calibration target: a domestique who has done 2000 kJ by the finale has lost 10–15 % of CP; a protected leader 5 %. This is the core mechanic of the monuments.
+  Calibration targets: a domestique (durability 0.5) who has done 2000 kJ has lost 10–15 % of CP (13.9 %); a protected leader (0.8) ~5 % at 1500 kJ (4.0 %; 5 % at durability 0.75). The first form, `(energyKj / (massKg · K))²`, could not hit both, and a monument costs every rider 4000–6000 kJ (≈ 170 W average for 7 h, like real power files), where it put the whole field at 25–35 %. The concave form keeps growing slowly after the targets: at the finish leaders are at 8–12 %, domestiques at 13–16 % on average (22 % for a 0.55 domestique at 5000 kJ). The onset E0 (~200 kJ) means the first half hour costs nothing. This is the core mechanic of the monuments.
 - When W′bal ≈ 0, a rider can't produce more than `cpEff`.
 - No nutrition/bonk model in v1.
 
@@ -178,9 +179,13 @@ Riders are 1D (distance along the course). `rankInGroup` gives a stable order in
 Each tick:
 1. **Group pace**:
    - If some riders in the group are in `pull` mode, they ride at the front at their intensity and set the speed.
-   - Otherwise, **default rotation**: all riders not in `recover` take turns at the front at a default intensity (0.65 × `cpEff`, configurable per race), changing every 30–60 s (seeded). A rider who can't hold that pace goes to the back of the rotation.
+   - Otherwise, **default rotation**: riders in `follow` take turns at the front at a default intensity, changing every 30–60 s (seeded). A rider who can't hold that pace goes to the back of the rotation.
+     - Intensity **1.03 × `cpEff`**, **1.1** on climbs (gradient ≥ 3 %: a 10–30 min climb is ridden near the 20-min power), configurable per race; never above the rider's own `maxIntensity` (1.0 when not ordered). The first value, 0.65, gave races at 31–37 km/h.
+     - Only the stronger **half** of the eligible riders take turns: ranked by `cpEff` over the power the front costs them at the group's speed on the current gradient (W/kg on climbs, W/CdA on the flat), recomputed at each turn change. The others sit in.
+     - Not eligible: `recover` riders, `follow` riders with `maxIntensity` < 0.9, riders whose W′bal is below 30 %.
+     - A group with nobody eligible rides at the pace of its front rider: `recover` at 0.7 × `cpEff` (was 0.55), `follow` at min(default, `maxIntensity`).
    - **Descents**: group speed = min(power-derived speed, speed cap from the leading rider's `descending` and the gradient). Followers freewheel. No splits on descents in v1.
-2. **Followers** compute the power needed to hold the group speed with their draft factor, bounded by their mode (`follow` with `maxIntensity`, `recover`). If they can't produce it, they slow down and a gap opens.
+2. **Followers** compute the power needed to hold the group speed with their draft factor, bounded by their mode (`follow` with `maxIntensity`, `recover` at 0.75 × `cpEff`); with `maxIntensity` above 1 a follower digs into W′ to hang on. If they can't produce it, they slow down and a gap opens.
 3. **Split** (with hysteresis): a rider or sub-group more than **3 s** behind the rider ahead **for 3 consecutive ticks** becomes a new group.
 4. **Merge**: a group that comes within **1 s** of the group ahead merges into it.
 5. **Attack**: a rider in `attack` mode leaves with a burst; they become a new group once the split rule fires. Other riders only respond if their controller tells them to (`follow` with `targetRiderId`); otherwise the group keeps its pace.
@@ -298,11 +303,14 @@ Adaptive frame step: one frame every **5 s** of race time, every **1 s** in the 
 Pure Kotlin common code using the API only (Ktor client + SSE). One instance per team, each in its own coroutine. It decides only from `decision` events. Simple, readable strategy driven by rider archetypes and the course:
 
 - **Roles** at start: 1 leader (best fit for the course: climber for Lombardia, puncheur for LBL, sprinter/puncheur for Sanremo), 1–2 lieutenants, domestiques.
-- **Early race**: some teams (seeded) send a rider in the breakaway; the strongest teams put one domestique in `pull` at moderate intensity to control the gap (the target gap shrinks as the finish gets closer).
-- **Climbs in the finale** (named climbs in the last ~60 km): domestiques `pull` hard at the foot, the leader `follow`s, attacks happen on the last 1–2 climbs depending on W′bal and the leader's profile (puncheurs attack late, climbers earlier on long climbs).
+- **Early race**: some teams (seeded) send a rider in the breakaway; break riders take turns in `pull` at 0.95 (1.0 in the last 30 km). The strongest teams (3 by default) control: one domestique each rides tempo (`pull` 0.95) while the break goes and builds its lead, since a peloton without pullers rides the faster default rotation and would never let a break go. Once the gap has reached the target (1.6 s per km to go, 20–240 s) or after 80 km, they only chase above the target (2–3 domestiques each, 1.05 / 1.15 / 1.2 with > 100 / > 40 / less km to go) until it is back under 60 % of it.
+- **Climbs in the finale** (named climbs in the last ~60 km): domestiques `pull` hard at the foot (1.15, 1.1 at Sanremo: above the default rotation on climbs, or the pull would slow the group), the leader `follow`s, attacks happen on the last 1–2 climbs depending on W′bal and the leader's profile (puncheurs attack late, 300–2500 m before the summit, climbers earlier on long climbs). A leader at its attack point waits for the next decision point half of the time, and never attacks at the decision point that reports a rival's attack from its group (it follows first, counters later), so attacks don't all fall on the same tick.
+- **Terrain**: break, control and chase pulls get +0.1 where the next 500 m climb at 3 % or more, like the default rotation.
+- **Sitting in**: riders without another order `follow` with `maxIntensity` 1.3 (leader, lieutenant, sprinter) or 1.1 (domestiques), so they use W′ to stay in the group on short climbs.
 - **Response**: when a rival leader attacks, the leader or a lieutenant follows (`follow` + `targetRiderId` + `maxIntensity`) if their W′bal allows it.
-- **Finale**: a teammate `pull`s in the last km for the sprinter, sprinters `sprint` in the last 250 m; others follow the best wheel.
-- **Spent riders**: domestiques with low `cpEff` switch to `recover`.
+- **Chase**: within 50 km, a team whose leader is behind (≥ 10 s) chases with 2 fresh helpers at 1.1; in the last 8 km, from 3 s, with up to 3 helpers who still have W′, at 1.3. This decides whether a Poggio attack sticks or the sprinters' teams bring it back.
+- **Finale**: a teammate `pull`s in the last km for the sprinter, contenders (leader, lieutenant, sprinter) `sprint` in every group in the last ~1 km, everyone in a small front group; others follow the best wheel.
+- **Spent riders** (`cpEff` < 85 % of CP or W′bal < 15 %): domestiques and lieutenants `recover` in the peloton; once dropped behind it (more than 120 s, or in a group of 3 or less) they ride home in `pull` at 0.8.
 
 Strategy parameters (aggressiveness, risk) come from the team config, so a batch can compare strategies.
 
@@ -354,6 +362,18 @@ Later: camera following a group, higher playback speeds, clickable events.
 - **Calibration harness** (no HTTP): scripted strategies run directly against the engine, to tune durability, default rotation and sprint before the bots exist.
 - Batch determinism: 2 runs with the same seed → identical result hash.
 - Sanity on results: winning average speed in a realistic range (40–44 km/h Sanremo, 39–42 LBL/Lombardia), finale gaps of seconds to a minute or two, not 20 min; different seeds give different winners.
+
+### Calibration (harness, default `RaceConfig`, seeds 1..8)
+
+`./gradlew :runner:calibrate --args="--seeds 1..8"` prints one report per race and a summary per course (`--trace true` adds a line every 10 km). The tuned numbers live in `ucai.engine.physics.Tuning` (engine) and `ucai.team.strategy.Tactics` (strategy).
+
+| Course | Winning avg speed | Winners | Largest gap in the top 10 |
+|--------|-------------------|---------|---------------------------|
+| Milano-Sanremo | 42.3–42.6 km/h (was 36.8–37.3) | sprinter 5, puncheur 3 (was puncheur or the early break) | 0–1 s, a reduced bunch of 15–30 (was up to 11 min) |
+| Liège-Bastogne-Liège | 40.4–40.8 km/h (was 33.1–34.2) | puncheur 5, climber 2, all-rounder 1 | 0–49 s (was 1–3 min) |
+| Il Lombardia | 39.2–39.6 km/h (was 31.5–32.5) | climber 7, all-rounder 1 (was all-rounders) | 30–146 s |
+
+Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. Riders do 4800–6100 kJ; at the finish leaders have lost 8–12 % of CP, domestiques 12–16 % on average.
 
 ---
 

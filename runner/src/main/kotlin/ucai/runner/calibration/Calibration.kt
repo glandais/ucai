@@ -123,6 +123,24 @@ object Calibration {
         return out
     }
 
+    /**
+     * One line per course over several seeds: winning average speed range, winners' archetypes, the largest gap
+     * inside the top 10, and the riders who did not finish.
+     */
+    fun summary(runs: List<Run>): String {
+        if (runs.isEmpty()) return ""
+        val speeds = runs.map { r -> r.course.distanceM / r.race.results().first().timeS!! * 3.6 }
+        val archetypes = runs.map { r -> r.field.rider(r.race.results().first().riderId)!!.archetype.name.lowercase() }
+            .groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.joinToString(", ") { "${it.key} ${it.value}" }
+        val top10 = runs.map { r -> r.race.results().take(10).maxOf { it.gapS ?: 0.0 } }
+        val dnf = runs.sumOf { r -> r.race.results().count { it.position == null } }
+        val winners = runs.map { r -> r.race.results().first().riderId }
+        fun f(x: Double) = "%.1f".format(Locale.ROOT, x)
+        return "  ${runs.first().course.id}: ${runs.size} seeds, avg ${f(speeds.min())}–${f(speeds.max())} km/h, " +
+            "winners [$archetypes], top-10 gap max ${top10.joinToString("/") { "%.0f".format(Locale.ROOT, it) }} s, " +
+            "winner ids $winners, not finished $dnf\n"
+    }
+
     fun report(r: Run): String {
         val results = r.race.results()
         val winner = results.first()
@@ -151,6 +169,15 @@ object Calibration {
         val leaders = r.strategies.values.map { it.roles.leader.id }.toSet()
         val leaderPos = results.filter { it.riderId in leaders }.map { it.position }
         sb.appendLine("  leaders at  $leaderPos")
+        // Fatigue at the finish, by role: mean work done (kJ) and mean CP lost (%).
+        val byRole = r.race.riders.groupBy { r.strategies.getValue(it.teamId).roles.role(it.id) }
+        sb.appendLine(
+            "  fatigue     " + byRole.entries.sortedBy { it.key.ordinal }.joinToString("  ") { (role, rs) ->
+                val kj = rs.map { it.energyKj }.average()
+                val lost = rs.map { 1.0 - it.cpEff / r.field.rider(it.id)!!.profile.cp }.average() * 100
+                "${role.name.lowercase()} ${"%.0f".format(Locale.ROOT, kj)} kJ −${"%.1f".format(Locale.ROOT, lost)}%"
+            },
+        )
         sb.appendLine(
             "  events      attacks ${events.count { it is RaceEvent.Attack }}, splits ${events.count { it is RaceEvent.GroupSplit }}," +
                 " merges ${events.count { it is RaceEvent.GroupMerge }}, dropped ${events.count { it is RaceEvent.RiderDropped }}",

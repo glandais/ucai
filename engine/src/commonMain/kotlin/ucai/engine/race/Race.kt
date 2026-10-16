@@ -25,8 +25,10 @@ import ucai.engine.physics.axialWind
 import ucai.engine.physics.descentSpeedCap
 import ucai.engine.physics.draftFactor
 import ucai.engine.physics.eulerStep
+import ucai.engine.physics.powerAtSpeed
 import ucai.engine.physics.resistiveForce
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -410,19 +412,43 @@ class Race(
     }
 
     private fun rotationEligible(r: RiderState) = r.mode == RiderMode.FOLLOW &&
-        r.maxIntensity >= config.defaultIntensity &&
+        r.maxIntensity >= config.rotationMinIntensity &&
         r.wPrimeBal >= config.rotationMinWPrimeFraction * r.wPrimeEff
 
-    /** Next turn among the riders of the queue matching [eligible]: the leader keeps it until its turn ends. */
-    private fun turn(g: Group, eligible: (RiderState) -> Boolean): RiderState {
+    /**
+     * Next turn among the riders of the queue matching [eligible]: the leader keeps it until its turn ends. With
+     * [strongest], only the riders for whom the front is cheapest take turns (see [strongHalf]).
+     */
+    private fun turn(g: Group, eligible: (RiderState) -> Boolean, strongest: Boolean = false): RiderState {
         val cur = g.leader
         if (cur != null && cur.attached && cur.group === g && eligible(cur) && tick < g.turnEndsTick) return cur
         if (cur != null && g.queue.remove(cur)) g.queue += cur
-        val next = g.queue.first(eligible)
+        val strong = if (strongest) strongHalf(g, eligible) else null
+        val next = g.queue.firstOrNull { eligible(it) && (strong == null || it in strong) } ?: g.queue.first(eligible)
         g.leader = next
         g.turnEndsTick = tick + rng.nextInt(config.turnMinS, config.turnMaxS + 1)
         return next
     }
+
+    /**
+     * The default rotation is ridden by the stronger part of the group: riders ranked by cpEff over the power the
+     * front costs them at the group's speed on the current gradient (W/kg on climbs, W/CdA on the flat); the best
+     * [RaceConfig.rotationShare] of the eligible riders take turns, the others sit in. Computed at turn changes only.
+     */
+    private fun strongHalf(g: Group, eligible: (RiderState) -> Boolean): Set<RiderState> {
+        val cand = g.queue.filter(eligible)
+        if (cand.size <= 2) return cand.toSet()
+        val vRef = max(g.bodySpeed, config.rotationRefSpeed)
+        val ranked = cand.sortedByDescending { r ->
+            r.cpEff / max(1.0, powerAtSpeed(vRef, conditions(r, g.bodyDist, 1.0)))
+        }
+        val n = max(2, ceil(cand.size * config.rotationShare).toInt())
+        return ranked.take(n).toSet()
+    }
+
+    /** Default rotation intensity: harder on climbs (a 10–30 min climb is ridden near the 20-min power, above CP). */
+    private fun rotationIntensity(g: Group): Double =
+        if (course.gradientAt(g.bodyDist) >= config.climbGradient) config.climbIntensity else config.defaultIntensity
 
     private class Pace(val leader: RiderState, val power: Double, val setter: (RiderState) -> Boolean)
 
@@ -439,12 +465,16 @@ class Race(
         }
         val elig: (RiderState) -> Boolean = ::rotationEligible
         if (q.any(elig)) {
-            val l = turn(g, elig)
-            return Pace(l, min(config.defaultIntensity * l.cpEff, l.phys.maxSustainablePower()), elig)
+            val l = turn(g, elig, strongest = true)
+            return Pace(l, min(min(rotationIntensity(g), l.maxIntensity) * l.cpEff, l.phys.maxSustainablePower()), elig)
         }
         val l = q.first()
         g.leader = l
-        val intensity = if (l.mode == RiderMode.RECOVER) config.recoverSoloIntensity else config.defaultIntensity
+        val intensity = when (l.mode) {
+            RiderMode.RECOVER -> config.recoverSoloIntensity
+            RiderMode.FOLLOW -> min(config.defaultIntensity, l.maxIntensity)
+            else -> config.defaultIntensity
+        }
         return Pace(l, min(intensity * l.cpEff, l.phys.maxSustainablePower())) { false }
     }
 
@@ -474,7 +504,7 @@ class Race(
         val n = body.size
         val v = g.bodySpeed
         val c = conditions(leader, g.bodyDist, 1.0)
-        val v1 = eulerStep(v, pace.power, c, dt, descentSpeedCap(leader.profile.descending, grad))
+        val v1 = crawl(eulerStep(v, pace.power, c, dt, descentSpeedCap(leader.profile.descending, grad)))
         leader.power = min(pace.power, requiredPower(v, v1, c))
         leader.newSpeed = v1
         leader.computed = true
@@ -505,13 +535,20 @@ class Race(
                 toBack += r
             } else {
                 r.power = cap
-                r.newSpeed = eulerStep(v, cap, cb, dt, descentSpeedCap(r.profile.descending, grad))
+                r.newSpeed = crawl(eulerStep(v, cap, cb, dt, descentSpeedCap(r.profile.descending, grad)))
                 detach(r)
             }
         }
         for (r in toBack) if (g.queue.remove(r)) g.queue += r
         g.newBodySpeed = v1
     }
+
+    /**
+     * Stall guard: a racing rider never goes below [RaceConfig.crawlSpeed]. On the steepest ramps a cooked rider's
+     * power can be below gravity even at the 1 m/s floor of the integration; he then zigzags or walks the bike up
+     * instead of stopping for good.
+     */
+    private fun crawl(v: Double) = max(v, config.crawlSpeed)
 
     private fun attackPower(r: RiderState): Double {
         val remaining = max(1, r.attackEndsTick - tick)
@@ -567,7 +604,7 @@ class Race(
             }
         }
         val power = max(0.0, p)
-        val v1 = eulerStep(v, power, c, dt, vMax)
+        val v1 = crawl(eulerStep(v, power, c, dt, vMax))
         r.power = if (v1 >= vMax) min(power, requiredPower(v, v1, c)) else power
         r.newSpeed = v1
         r.computed = true

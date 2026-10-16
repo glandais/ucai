@@ -1,20 +1,32 @@
 package ucai.engine.race
 
 import ucai.api.RiderProfile
+import ucai.engine.physics.Tuning
 
 /** A rider on the start list: [id] is unique in the race, [teamId] is the controlling team. */
 data class RaceEntrant(val id: Int, val teamId: String, val profile: RiderProfile)
 
 /**
- * Tunable parameters of the race engine (DESIGN §3). Defaults follow the design; tests and the calibration
- * harness may change them.
+ * Tunable parameters of the race engine (DESIGN §3). Defaults follow the design; the calibrated ones come from
+ * [Tuning]. Tests and the calibration harness may change them.
  */
 data class RaceConfig(
-    /** Default rotation intensity at the front, fraction of cpEff. */
-    val defaultIntensity: Double = 0.65,
+    /**
+     * Default rotation intensity at the front, fraction of cpEff, and on climbs (gradient at or above
+     * [climbGradient]). A turn never goes above the rider's own `maxIntensity` (1.0 when not ordered).
+     */
+    val defaultIntensity: Double = Tuning.ROTATION_INTENSITY,
+    val climbIntensity: Double = Tuning.ROTATION_CLIMB_INTENSITY,
+    val climbGradient: Double = Tuning.ROTATION_CLIMB_GRADIENT,
     /** Turn length bounds of the default rotation (seeded, inclusive), s. */
     val turnMinS: Int = 30,
     val turnMaxS: Int = 60,
+    /** A `follow` rider whose `maxIntensity` is below this sits in and never takes turns. */
+    val rotationMinIntensity: Double = Tuning.ROTATION_MIN_INTENSITY,
+    /** Share of the rotation members (the strongest at the front on the current terrain) that take turns. */
+    val rotationShare: Double = Tuning.ROTATION_SHARE,
+    /** Reference speed (m/s) for ranking the rotation when the group is slower (start, steep ramps). */
+    val rotationRefSpeed: Double = 5.0,
     /** A rotation member whose W′bal is below this fraction of wPrimeEff skips turns. */
     val rotationMinWPrimeFraction: Double = 0.3,
     /** Split: gap to the rider ahead above [splitGapS] for [splitTicks] consecutive ticks. */
@@ -30,7 +42,7 @@ data class RaceConfig(
     val draftFadeM: Double = 10.0,
     /** Max intensity (fraction of cpEff) a `recover` rider spends to stay in a group, and when alone. */
     val recoverHoldIntensity: Double = 0.75,
-    val recoverSoloIntensity: Double = 0.55,
+    val recoverSoloIntensity: Double = Tuning.RECOVER_SOLO_INTENSITY,
     /** Max intensity of a rider waiting for its group (ahead of its body in `follow`). */
     val waitIntensity: Double = 0.8,
     /** Max closing speed above the reference speed when closing a gap (m/s), and seconds to close it. */
@@ -60,6 +72,8 @@ data class RaceConfig(
     /** Riders passing a summit reported in `climb_summit`, and how long to wait for them (s). */
     val summitRiders: Int = 10,
     val summitWaitS: Int = 60,
+    /** Stall guard: a racing rider never goes slower than this (m/s, ≈ 5.4 km/h, walking the bike). */
+    val crawlSpeed: Double = Tuning.CRAWL_SPEED,
     /** Speed at km 0 (flying start), m/s. */
     val startSpeed: Double = 10.0,
     /** Safety stop. */

@@ -1,12 +1,13 @@
 package ucai.runner.calibration
 
+import ucai.engine.riders.Field
 import java.io.File
 
 /**
  * Calibration entry point: `./gradlew :runner:calibrate --args="--courses milano-sanremo --seeds 1,2,3"`.
  *
  * Options: `--courses a,b,c` (default: the 3 monuments), `--seeds 1,2,3` or `--seeds 1..5` (default 1..3),
- * `--courses-dir races/courses`, `--out replays/`.
+ * `--courses-dir races/courses`, `--out replays/`, `--trace true` (a line every `--trace-step` m, default 10 000).
  */
 fun main(args: Array<String>) {
     val opts = args.toList().chunked(2).associate { (k, v) -> k.removePrefix("--") to v }
@@ -16,17 +17,27 @@ fun main(args: Array<String>) {
     val out = File(opts["out"] ?: "replays")
 
     var failed = false
+    val summary = StringBuilder("== Summary\n")
     for (id in courses) {
         val course = Calibration.loadCourse(coursesDir, id)
+        val runs = mutableListOf<Calibration.Run>()
         for (seed in seeds) {
-            val run = Calibration.run(course, seed)
+            val trace = if (opts["trace"] == "true") {
+                val field = Field.generate(seed)
+                Trace((opts["trace-step"] ?: "10000").toDouble()) { rider -> field.rider(rider)!!.profile.cp }
+            } else null
+            val run = Calibration.run(course, seed, observer = trace)
             val file = File(out, "$id-$seed.json.gz")
             Calibration.writeReplay(run.replay, file)
             print(Calibration.report(run))
+            trace?.let { print(it) }
             println("  replay      $file (${file.length() / 1024} KiB)")
             if (run.rejected.isNotEmpty()) failed = true
+            runs += run
         }
+        summary.append(Calibration.summary(runs))
     }
+    print(summary)
     if (failed) error("some orders were rejected")
 }
 
