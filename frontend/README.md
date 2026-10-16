@@ -27,6 +27,43 @@ npm run dev          # http://localhost:5173, /api is proxied to http://localhos
 
 Playback keys: space = play/pause; on the focused timeline ←/→ = ∓1 min (shift: 10 min), Home/End.
 
+Map camera: follows the head of the race by default (TV style); **Whole course** fits the course, a click on a
+group label follows that group, dragging the map stops following. Profile: **Full course** / **Last 50 km**
+toggle (top left); in the default auto mode it zooms on the last 50 km once the head of the race is 40 km
+from the line, groups behind the window are counted at its left edge.
+
+## Screenshots
+
+Seed 42 replays from the runner, 1440×900, served by the kernel (`--serve`) through the Vite proxy.
+
+| | |
+|---|---|
+| ![Milano-Sanremo, breakaway](../docs/screenshots/milano-sanremo-breakaway.png) | ![Milano-Sanremo, Poggio](../docs/screenshots/milano-sanremo-last-climb.png) |
+| Milano-Sanremo, breakaway established (camera following the leaders, peloton at +3:09) | Milano-Sanremo, Poggio (profile zoomed on the last 50 km) |
+| ![Liège-Bastogne-Liège, Roche-aux-Faucons](../docs/screenshots/liege-bastogne-liege-last-climb.png) | ![Il Lombardia, finish](../docs/screenshots/il-lombardia-finish.png) |
+| Liège-Bastogne-Liège, Roche-aux-Faucons, 15 groups | Il Lombardia, just after the winner crossed the line |
+| ![Il Lombardia, results](../docs/screenshots/il-lombardia-results.png) | ![Local file](../docs/screenshots/local-file-liege-bastogne-liege.png) |
+| Il Lombardia, final classification | `replays/liege-bastogne-liege-42.json.gz` opened as a local file |
+
+Race list: [`race-list.png`](../docs/screenshots/race-list.png).
+
+## Measures
+
+Headless Chrome (Playwright), 1440×900, AMD Renoir iGPU through ANGLE/GL, kernel and Vite on the same machine.
+
+| | Milano-Sanremo | Liège-Bastogne-Liège | Il Lombardia |
+|---|---|---|---|
+| Replay download (gzip on the wire → JSON) | 1.2 MB → 11.1 MB | 1.4 MB → 11.8 MB | 1.3 MB → 11.0 MB |
+| Fetch / gunzip + JSON.parse + decode / `ReplayModel` | 56 / 76 / 10 ms | 72 / 91 / 10 ms | 68 / 77 / 10 ms |
+| Click "Watch replay" → replay view rendered (production build) | 370–420 ms | 330–340 ms | 330 ms |
+| `snapshotAt` (mean over the race) | 86 µs | 14 µs | 60 µs |
+| ×60 playback, production build (10 s of rAF, finale) | 60 fps, p95 16.7 ms | 60 fps, p95 16.8 ms | 60 fps, p95 16.8 ms |
+| ×60 playback, dev server (finale) | 60 fps | 52 fps, p95 33 ms | 51 fps, p95 33 ms |
+| JS heap while playing | 30–60 MB | 30–75 MB | 30–75 MB |
+
+A local `.json.gz` file opens in ≈ 420 ms. With software WebGL (SwiftShader, the headless default) MapLibre alone
+caps playback at 13–17 fps: measure with a real GPU (`--ignore-gpu-blocklist --use-angle=gl-egl`).
+
 ## Layout
 
 ```
