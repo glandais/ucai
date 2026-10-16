@@ -53,12 +53,21 @@ export interface Geometry {
   area: Path2D;
 }
 
-export function buildGeometry(meta: RaceMeta, size: Size): Geometry {
+/** Course length used by the profile, m. */
+export function courseLengthM(meta: RaceMeta): number {
   const { points, distanceM } = meta.course;
-  const total = distanceM > 0 ? distanceM : (points[points.length - 1]?.distM ?? 0);
-  let lo = Infinity;
-  let hi = -Infinity;
+  return distanceM > 0 ? distanceM : (points[points.length - 1]?.distM ?? 0);
+}
+
+/** Geometry of the profile over `[startM, finish]` (the whole course when `startM` is 0). */
+export function buildGeometry(meta: RaceMeta, size: Size, startM = 0): Geometry {
+  const { points } = meta.course;
+  const total = courseLengthM(meta);
+  const from = Math.max(0, Math.min(startM, total));
+  let lo = elevationAt(points, from);
+  let hi = lo;
   for (const p of points) {
+    if (p.distM < from) continue;
     lo = Math.min(lo, p.eleM);
     hi = Math.max(hi, p.eleM);
   }
@@ -68,9 +77,9 @@ export function buildGeometry(meta: RaceMeta, size: Size): Geometry {
     width: Math.max(1, size.w - PAD.left - PAD.right),
     height: Math.max(1, size.h - PAD.top - PAD.bottom),
   };
-  const scale = new ProfileScale(rect, total, elevationRange(lo, hi, rect.height > 90 ? 3 : 2));
+  const scale = new ProfileScale(rect, total, elevationRange(lo, hi, rect.height > 90 ? 3 : 2), from);
   const n = Math.max(1, Math.round(rect.width * size.dpr));
-  const columns = profileColumns(points, total, n, gradeSegmentM(total, rect.width));
+  const columns = profileColumns(points, total, n, gradeSegmentM(total - from, rect.width), from);
   const area = new Path2D();
   area.moveTo(rect.left, scale.bottom);
   for (let i = 0; i < n; i++) {
@@ -99,7 +108,8 @@ export function prepareCanvas(canvas: HTMLCanvasElement, size: Size): CanvasRend
   return ctx;
 }
 
-export function drawStatic(ctx: CanvasRenderingContext2D, meta: RaceMeta, g: Geometry, t: Theme): void {
+/** `labelMinX`: climb names stay right of this x (CSS px), clear of the zoom toggle. */
+export function drawStatic(ctx: CanvasRenderingContext2D, meta: RaceMeta, g: Geometry, t: Theme, labelMinX = 2): void {
   const { scale, columns, size } = g;
   const { rect } = scale;
   const { dpr } = size;
@@ -127,6 +137,7 @@ export function drawStatic(ctx: CanvasRenderingContext2D, meta: RaceMeta, g: Geo
   // Climb bands.
   ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
   for (const c of meta.climbs) {
+    if (c.endM <= scale.startM) continue;
     const x0 = scale.x(c.startM);
     ctx.fillRect(x0, rect.top - 8, Math.max(1, scale.x(c.endM) - x0), scale.bottom - rect.top + 8);
   }
@@ -178,13 +189,13 @@ export function drawStatic(ctx: CanvasRenderingContext2D, meta: RaceMeta, g: Geo
   ctx.moveTo(rect.left, Math.round(scale.bottom) + 0.5);
   ctx.lineTo(scale.right, Math.round(scale.bottom) + 0.5);
   ctx.stroke();
-  const step = kmStep(scale.totalM, rect.width);
+  const step = kmStep(scale.spanM, rect.width);
   ctx.font = font(t, 10);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (const km of ticks(0, scale.totalM / 1000, step)) {
+  for (const km of ticks(scale.startM / 1000, scale.totalM / 1000, step)) {
     const x = Math.round(scale.x(km * 1000)) + 0.5;
-    if (scale.right - x < 40) continue;
+    if (scale.right - x < 40 || x - rect.left < (scale.startM > 0 ? 12 : -1)) continue;
     ctx.strokeStyle = t.muted;
     ctx.beginPath();
     ctx.moveTo(x, scale.bottom);
@@ -213,7 +224,7 @@ export function drawStatic(ctx: CanvasRenderingContext2D, meta: RaceMeta, g: Geo
   ctx.textAlign = 'right';
   ctx.fillText(formatKm(scale.totalM), fx, scale.bottom + 6);
 
-  drawClimbLabels(ctx, meta, scale, t);
+  drawClimbLabels(ctx, meta, scale, t, labelMinX);
 }
 
 /** Width of the checkered flag left of the finish post, CSS px. */
@@ -231,11 +242,12 @@ const CLIMB_ROWS = [10, 22, 34];
  * Climb names in fixed rows above the plot, each with a leader line down to its summit. Harder climbs (height
  * gained) claim the lower rows first; a name that still doesn't fit is left out (the hover shows it).
  */
-function drawClimbLabels(ctx: CanvasRenderingContext2D, meta: RaceMeta, scale: ProfileScale, t: Theme): void {
+function drawClimbLabels(ctx: CanvasRenderingContext2D, meta: RaceMeta, scale: ProfileScale, t: Theme, labelMinX: number): void {
   const { rect } = scale;
   const nameFont = font(t, 11, 700);
   ctx.font = nameFont;
   const labels = meta.climbs
+    .filter((c) => scale.shows(c.endM))
     .map((c) => {
       const name = shortClimbName(c.name);
       const w = ctx.measureText(name).width;
@@ -244,7 +256,7 @@ function drawClimbLabels(ctx: CanvasRenderingContext2D, meta: RaceMeta, scale: P
         name,
         w,
         sx,
-        x0: clampBox(sx - w / 2, w, 2, scale.right - FLAG_W - 4),
+        x0: clampBox(sx - w / 2, w, labelMinX, scale.right - FLAG_W - 4),
         sy: scale.y(elevationAt(meta.course.points, c.endM)),
         gain: (c.endM - c.startM) * c.avgGrade,
       };
@@ -356,13 +368,41 @@ export function drawOverlay(
     ctx.fillText(label, x + w / 2, y + 8);
   }
 
+  // Groups behind a zoomed window: a count at its left edge.
+  const behind = snapshot.groups.filter((gr) => gr.headDistM < scale.startM);
+  if (behind.length > 0) {
+    const riders = behind.reduce((n, gr) => n + gr.size, 0);
+    const label = `◀ ${behind.length} ${behind.length === 1 ? 'group' : 'groups'} behind (${riders})`;
+    ctx.font = font(t, 11, 700);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = t.panel;
+    ctx.strokeText(label, rect.left + 6, scale.bottom - 12);
+    ctx.fillStyle = t.text;
+    ctx.fillText(label, rect.left + 6, scale.bottom - 12);
+  }
+
   // Groups on the road, back to front so the lead group is on top.
   const markers = groupMarkers(meta, snapshot, scale);
   ctx.font = font(t, 11, 700);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // Groups without a free lane: a team-colored dot on the profile.
+  for (const m of markers) {
+    if (m.lane >= 0) continue;
+    ctx.fillStyle = m.color;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(m.x, m.curveY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
   for (let i = markers.length - 1; i >= 0; i--) {
     const m = markers[i]!;
+    if (m.lane < 0) continue;
     const cy = Math.max(BUBBLE_H / 2 + 1, m.curveY - 14 - m.lane * LANE_PITCH);
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.lineWidth = 1;

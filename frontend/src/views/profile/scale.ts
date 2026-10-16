@@ -54,16 +54,31 @@ export interface PlotRect {
   height: number;
 }
 
-/** Linear mappings between course distance / elevation and plot coordinates. */
+/**
+ * Linear mappings between course distance / elevation and plot coordinates. The plot shows the window
+ * `[startM, totalM]` of the course (the whole course by default, the finale when zoomed).
+ */
 export class ProfileScale {
   constructor(
     readonly rect: PlotRect,
     readonly totalM: number,
     readonly ele: EleRange,
+    readonly startM = 0,
   ) {}
 
+  /** Length of the window shown, m. */
+  get spanM(): number {
+    return this.totalM - this.startM;
+  }
+
+  /** True when `distM` lies inside the window shown. */
+  shows(distM: number): boolean {
+    return distM >= this.startM - 1e-6 && distM <= this.totalM + 1e-6;
+  }
+
   x(distM: number): number {
-    const f = this.totalM > 0 ? distM / this.totalM : 0;
+    const span = this.spanM;
+    const f = span > 0 ? (distM - this.startM) / span : 0;
     return this.rect.left + Math.max(0, Math.min(1, f)) * this.rect.width;
   }
 
@@ -73,10 +88,10 @@ export class ProfileScale {
     return this.rect.top + (1 - f) * this.rect.height;
   }
 
-  /** Course distance at plot x, clamped to the course. */
+  /** Course distance at plot x, clamped to the window. */
   dist(x: number): number {
     const f = this.rect.width > 0 ? (x - this.rect.left) / this.rect.width : 0;
-    return Math.max(0, Math.min(1, f)) * this.totalM;
+    return this.startM + Math.max(0, Math.min(1, f)) * this.spanM;
   }
 
   get bottom(): number {
@@ -96,23 +111,23 @@ export interface ProfileColumns {
 }
 
 /**
- * Samples the course into `n` equal-width columns over `[0, totalM]`. Each column's elevation is the highest of
+ * Samples the course into `n` equal-width columns over `[startM, totalM]`. Each column's elevation is the highest of
  * the points inside it and the interpolated elevations at its edges; its gradient is the average gradient of the
  * `segmentM` long course segment (counted from the start) that holds the column center, giving the blocky TV look.
  */
-export function profileColumns(points: readonly CoursePoint[], totalM: number, n: number, segmentM = 1000): ProfileColumns {
+export function profileColumns(points: readonly CoursePoint[], totalM: number, n: number, segmentM = 1000, startM = 0): ProfileColumns {
   const cols = Math.max(0, Math.floor(n));
   const ele = new Float64Array(cols);
   const grade = new Float64Array(cols);
   if (cols === 0 || points.length === 0) return { ele, grade };
-  const w = totalM / cols;
-  const seg = segmentM > 0 ? segmentM : totalM;
+  const w = (totalM - startM) / cols;
+  const seg = segmentM > 0 ? segmentM : totalM - startM;
   let segIndex = -1;
   let segGrade = 0;
   let p = 0;
   for (let i = 0; i < cols; i++) {
-    const a = i * w;
-    const b = (i + 1) * w;
+    const a = startM + i * w;
+    const b = startM + (i + 1) * w;
     let m = Math.max(elevationAt(points, a), elevationAt(points, b));
     while (p < points.length && points[p]!.distM < a) p++;
     for (let k = p; k < points.length && points[k]!.distM <= b; k++) m = Math.max(m, points[k]!.eleM);

@@ -30,12 +30,14 @@ export function bubbleWidth(label: string): number {
 
 /**
  * One marker per group on the road (front to back): at its head, colored like the team of its leading rider,
- * labelled with its size, stacked in lanes when groups are too close to be told apart. The lead group gets
- * lane priority.
+ * labelled with its size, stacked in lanes when groups are too close to be told apart. Lanes go to the lead
+ * group first, then to the biggest groups; a group that finds no free lane gets `lane = -1` (drawn as a dot on
+ * the profile only), so a bunch of small groups never grows a pile of overlapping bubbles.
  */
 export function groupMarkers(meta: RaceMeta, snapshot: RaceSnapshot, scale: ProfileScale, maxLanes = 4): GroupMarker[] {
   const points = meta.course.points;
-  const base = snapshot.groups.map((g, i) => {
+  const base = snapshot.groups.flatMap((g, i) => {
+    if (!scale.shows(g.headDistM)) return []; // behind a zoomed window
     const label = String(g.size);
     const w = bubbleWidth(label);
     const x = scale.x(g.headDistM);
@@ -50,14 +52,19 @@ export function groupMarkers(meta: RaceMeta, snapshot: RaceSnapshot, scale: Prof
       color,
       textColor: textColorOn(color),
       lead: i === 0,
+      size: g.size,
     };
   });
+  const order = base.map((_, i) => i).sort((a, b) => Number(base[b]!.lead) - Number(base[a]!.lead) || base[b]!.size - base[a]!.size || a - b);
   const lanes = assignLanes(
-    base.map((m) => ({ x0: m.x - m.w / 2, x1: m.x + m.w / 2 })),
+    order.map((i) => ({ x0: base[i]!.x - base[i]!.w / 2, x1: base[i]!.x + base[i]!.w / 2 })),
     2,
     maxLanes,
+    true,
   );
-  return base.map((m, i) => ({ ...m, lane: lanes[i]! }));
+  const laneOf = new Array<number>(base.length);
+  order.forEach((i, k) => (laneOf[i] = lanes[k]!));
+  return base.map(({ size: _size, ...m }, i) => ({ ...m, lane: laneOf[i]! }));
 }
 
 /** The climb containing `distM` (start inclusive, summit inclusive), if any. */

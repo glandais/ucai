@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react';
 import type { RaceMeta } from '../replay/meta';
 import type { RaceSnapshot } from '../replay/source';
-import { buildGeometry, drawOverlay, drawStatic, prepareCanvas, readTheme, type Size, type Theme } from './profile/draw';
+import { buildGeometry, courseLengthM, drawOverlay, drawStatic, prepareCanvas, readTheme, type Size, type Theme } from './profile/draw';
 import './profile/ProfileView.css';
 
 /**
@@ -11,11 +11,23 @@ import './profile/ProfileView.css';
  * Two stacked canvases: the course (gradient-colored profile, climbs, km marks, finish) is drawn only when the
  * size or the race changes; the overlay (covered part, race head, groups, hover) is redrawn on every render.
  * Both follow the box size (ResizeObserver) and the device pixel ratio.
+ *
+ * Zoom: the whole course, or the last `FINALE_M` (where the groups bunch up on the final climbs). In `auto`
+ * (default) the profile switches to the finale once the head of the race is `FINALE_SWITCH_M` from the line.
  */
 export interface ProfileViewProps {
   meta: RaceMeta;
   snapshot: RaceSnapshot;
 }
+
+/** Length of the finale window, m. */
+export const FINALE_M = 50_000;
+/** In auto zoom, the finale window shows once the head of the race is this far from the finish, m. */
+export const FINALE_SWITCH_M = 40_000;
+/** Width reserved for the zoom toggle at the top left (climb names stay right of it), CSS px. */
+const TOGGLE_W = 112;
+
+type Zoom = 'auto' | 'full' | 'finale';
 
 export function ProfileView({ meta, snapshot }: ProfileViewProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -25,7 +37,16 @@ export function ProfileView({ meta, snapshot }: ProfileViewProps) {
   const size = useBoxSize(wrapRef);
   const [hoverX, setHoverX] = useState<number | null>(null);
 
-  const geometry = useMemo(() => (size && size.w > 0 && size.h > 0 ? buildGeometry(meta, size) : null), [meta, size]);
+  const [zoom, setZoom] = useState<Zoom>('auto');
+  const totalM = courseLengthM(meta);
+  const canZoom = totalM > FINALE_M * 1.5;
+  const finale = canZoom && (zoom === 'finale' || (zoom === 'auto' && totalM - snapshot.headDistM <= FINALE_SWITCH_M));
+  const startM = finale ? totalM - FINALE_M : 0;
+
+  const geometry = useMemo(
+    () => (size && size.w > 0 && size.h > 0 ? buildGeometry(meta, size, startM) : null),
+    [meta, size, startM],
+  );
 
   useEffect(() => {
     const canvas = baseRef.current;
@@ -34,8 +55,8 @@ export function ProfileView({ meta, snapshot }: ProfileViewProps) {
     const theme = readTheme(wrap);
     themeRef.current = theme;
     const ctx = prepareCanvas(canvas, geometry.size);
-    if (ctx) drawStatic(ctx, meta, geometry, theme);
-  }, [meta, geometry]);
+    if (ctx) drawStatic(ctx, meta, geometry, theme, canZoom ? TOGGLE_W : 2);
+  }, [meta, geometry, canZoom]);
 
   useEffect(() => {
     const canvas = overRef.current;
@@ -63,6 +84,18 @@ export function ProfileView({ meta, snapshot }: ProfileViewProps) {
     >
       <canvas ref={baseRef} />
       <canvas ref={overRef} />
+      {canZoom && (
+        <button
+          type="button"
+          className={`profile-zoom${finale ? ' active' : ''}`}
+          style={{ maxWidth: TOGGLE_W - 12 }}
+          onPointerMove={(e) => e.stopPropagation()}
+          onClick={() => setZoom(finale ? 'full' : 'finale')}
+          title={finale ? 'Show the whole course' : `Zoom on the last ${FINALE_M / 1000} km`}
+        >
+          {finale ? `Last ${FINALE_M / 1000} km` : 'Full course'}
+        </button>
+      )}
     </div>
   );
 }
