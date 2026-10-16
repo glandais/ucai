@@ -20,9 +20,9 @@ import ucai.api.Wind
 import ucai.engine.course.Course
 import ucai.engine.physics.PhysicsConstants
 import ucai.engine.physics.RideConditions
+import ucai.engine.physics.Tuning
 import ucai.engine.physics.airDensity
 import ucai.engine.physics.axialWind
-import ucai.engine.physics.descentSpeedCap
 import ucai.engine.physics.draftFactor
 import ucai.engine.physics.eulerStep
 import ucai.engine.physics.powerAtSpeed
@@ -93,6 +93,8 @@ class Race(
     /** When the head of the race passed each course point: real time gaps ([gapAt]). */
     private val passTimes = PassTimes(DoubleArray(course.points.size) { course.points[it].distM })
     private val dt = PhysicsConstants.DT
+    /** Descent caps, turns and braking before them, per descending skill. */
+    private val speedLimits = SpeedLimits(course)
 
     init {
         require(entrants.isNotEmpty()) { "a race needs riders" }
@@ -517,8 +519,19 @@ class Race(
 
         val n = body.size
         val v = g.bodySpeed
-        val c = conditions(leader, g.bodyDist, 1.0)
-        val v1 = crawl(eulerStep(v, pace.power, c, dt, descentSpeedCap(leader.profile.descending, grad)))
+        var c = conditions(leader, g.bodyDist, 1.0)
+        val vMax = speedLimits.at(g.bodyDist, leader.profile.descending)
+        var v1 = crawl(eulerStep(v, pace.power, c, dt, vMax))
+        if (descent) {
+            // Downhill the wheels come past a front rider slower than them: the group goes at least at the
+            // freewheeling speed of a tucked rider on the 2nd wheel, and the front rider tucks too.
+            val tuck = c.copy(cda = c.cda * Tuning.DESCENT_CDA_FACTOR)
+            val free = eulerStep(v, 0.0, tuck.copy(kDraft = if (n > 1) draftFactor(2, n) else 1.0), dt, vMax)
+            if (free > v1) {
+                v1 = free
+                c = tuck
+            }
+        }
         leader.power = min(pace.power, requiredPower(v, v1, c))
         leader.newSpeed = v1
         leader.computed = true
@@ -549,7 +562,7 @@ class Race(
                 toBack += r
             } else {
                 r.power = cap
-                r.newSpeed = crawl(eulerStep(v, cap, cb, dt, descentSpeedCap(r.profile.descending, grad)))
+                r.newSpeed = crawl(eulerStep(v, cap, cb, dt, speedLimits.at(g.bodyDist, r.profile.descending)))
                 detach(r)
             }
         }
@@ -582,7 +595,7 @@ class Race(
         val g = r.group
         val grad = course.gradientAt(r.distM)
         var c = conditions(r, r.distM, proximityDraft(r.aheadGapM))
-        val vMax = descentSpeedCap(r.profile.descending, grad)
+        val vMax = speedLimits.at(r.distM, r.profile.descending)
         val v = r.speed
         val maxSust = r.phys.maxSustainablePower(dt)
         val hasBody = g.queue.isNotEmpty()
@@ -618,8 +631,17 @@ class Race(
             }
         }
         val power = max(0.0, p)
-        val v1 = crawl(eulerStep(v, power, c, dt, vMax))
+        var v1 = crawl(eulerStep(v, power, c, dt, vMax))
         r.power = if (v1 >= vMax) min(power, requiredPower(v, v1, c)) else power
+        if (grad <= config.descentGradient) {
+            // Tucked and freewheeling, if that is faster than pedalling upright.
+            val tuck = c.copy(cda = c.cda * Tuning.DESCENT_CDA_FACTOR)
+            val free = eulerStep(v, 0.0, tuck, dt, vMax)
+            if (free > v1) {
+                v1 = free
+                r.power = 0.0
+            }
+        }
         r.newSpeed = v1
         r.computed = true
     }

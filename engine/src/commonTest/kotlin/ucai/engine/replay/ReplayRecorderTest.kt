@@ -61,8 +61,10 @@ class ReplayRecorderTest {
         // Head of race within 3 km of the finish: first tick where the leader is past 17 km.
         val fineFrom = replay.frames.first { f -> f.r.maxOf { it.distM } >= 17_000.0 }.t
         for ((a, b) in ticks.zipWithNext()) {
-            val fine = b in (attack.tick + 1)..(attack.tick + 60) || b >= fineFrom
+            // The first fine frame may follow a coarse step: the head can cross 17 km between two coarse frames.
+            val fine = b in (attack.tick + 1)..(attack.tick + 60) || b > fineFrom
             if (b == ticks.last()) continue
+            if (b == fineFrom) { assertTrue(b - a in 1..5, "first fine frame at $b"); continue }
             if (fine) assertEquals(1, b - a, "1 s step at $b") else {
                 assertEquals(0, b % 5, "coarse frames on multiples of 5 s ($b)")
                 assertTrue(b - a in 1..5, "coarse step at $b")

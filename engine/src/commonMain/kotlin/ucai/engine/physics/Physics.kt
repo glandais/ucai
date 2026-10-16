@@ -7,6 +7,7 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Physical constants of the kernel v1 model (DESIGN §3 "Physics"). */
 object PhysicsConstants {
@@ -92,16 +93,24 @@ fun eulerStep(
 }
 
 /**
- * Max safe speed (m/s) on a descent, from the rider's [descending] skill (0..1) and the [gradient].
- * No cap above −3 %. Below, the cap starts at 60–85 km/h (by skill) and drops 2 km/h per
- * extra percent of slope (steeper roads are more technical), never under 35 km/h.
+ * Max safe speed (m/s) on a straight descent, from the rider's [descending] skill (0..1) and the [gradient].
+ * No cap above −3 %. Below, 75–90 km/h by skill (pros on open roads), 1 km/h less per extra percent of slope
+ * (longer braking distances), never under 50 km/h. Turns are limited separately ([cornerSpeed]).
  */
 fun descentSpeedCap(descending: Double, gradient: Double): Double {
     if (gradient >= -0.03) return Double.POSITIVE_INFINITY
     val skill = descending.coerceIn(0.0, 1.0)
-    val kmh = 60.0 + 25.0 * skill - 200.0 * (-gradient - 0.03)
-    return max(35.0, kmh) / 3.6
+    val kmh = Tuning.DESCENT_MAX_KMH + Tuning.DESCENT_SKILL_KMH * skill - Tuning.DESCENT_STEEP_KMH * (-gradient - 0.03) * 100.0
+    return max(50.0, kmh) / 3.6
 }
+
+/** Lateral grip a rider uses in turns, in g, by [descending] skill (0..1). */
+fun cornerGrip(descending: Double): Double =
+    Tuning.CORNER_GRIP_MIN + (Tuning.CORNER_GRIP_MAX - Tuning.CORNER_GRIP_MIN) * descending.coerceIn(0.0, 1.0)
+
+/** Max speed (m/s) through a turn of [radiusM]: lateral acceleration v²/R at most [cornerGrip]·g. */
+fun cornerSpeed(radiusM: Double, descending: Double): Double =
+    if (radiusM.isInfinite()) Double.POSITIVE_INFINITY else sqrt(cornerGrip(descending) * PhysicsConstants.G * radiusM)
 
 /**
  * Drafting factor on the aero term by [rank] (1 = front) in a group of [groupSize].
