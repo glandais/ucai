@@ -186,6 +186,7 @@ class LockstepTest {
             assertEquals(false, res.acked)
 
             // Last order for a rider wins; the same body twice is idempotent, before and after the ack.
+            send(Order(mine, RiderMode.PULL, 0.8))
             val body = arrayOf(Order(mine, RiderMode.RECOVER), Order(a.riders[1].id, RiderMode.PULL, 1.0))
             val first = send(*body, ack = true)
             assertEquals(HttpStatusCode.OK to true, first.first to first.second.acked)
@@ -193,6 +194,10 @@ class LockstepTest {
             val after = send(Order(mine, RiderMode.SPRINT))
             assertEquals(RejectReason.DECISION_ACKED, after.second.rejected.single().reason)
             assertTrue(after.second.acked)
+            // An order overwritten before the ack is not in effect: repeating it after the ack is rejected too.
+            val overwritten = send(Order(mine, RiderMode.PULL, 0.8))
+            assertEquals(emptyList(), overwritten.second.accepted)
+            assertEquals(RejectReason.DECISION_ACKED, overwritten.second.rejected.single().reason)
 
             val view = api.getAs(ApiPaths.team(raceId, a.teamId), ucai.api.TeamView.serializer(), a.token)
             assertEquals(0, view.tick, "waiting for team B")

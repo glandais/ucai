@@ -43,8 +43,9 @@ class RegistryTest {
     @Test
     fun createAndRegister() = kernelTest { api ->
         assertEquals(
-            HttpStatusCode.BadRequest,
+            HttpStatusCode.NotFound,
             api.post(ApiPaths.races(), CreateRaceRequest.serializer(), CreateRaceRequest("nowhere", 1, ClockConfig(ClockMode.LOCKSTEP))).status,
+            "an unknown course is a 404",
         )
         val raceId = api.createRace(seed = 7)
         val a = api.register(raceId, "Alpha", "#ff0000")
@@ -58,6 +59,11 @@ class RegistryTest {
         for (r in a.riders + b.riders) assertEquals(RatingScale.REFERENCE.rate(r.profile), r.ratings)
         val solo = api.createRace(seed = 7)
         assertEquals(a.riders, api.register(solo, "Alpha", "#ff0000").riders, "same seed and index, same riders and ratings")
+        // The public seed alone does not rebuild the riders: they come from the seed mixed with the kernel secret.
+        val public = ucai.engine.riders.RiderGenerator.generateTeamRiders(7, 0)
+        assertTrue(public.map { it.name } != a.riders.map { it.name }, "riders must not be generated from the bare seed")
+        val secret = ucai.engine.riders.RiderGenerator.generateTeamRiders(raceSeed(7, api.kernel.config.seedSecret), 0)
+        assertEquals(secret.map { it.name to it.profile }, a.riders.map { it.name to it.profile })
 
         // Validation.
         fun reg(name: String, color: String = "#123456", riders: List<ucai.api.RiderSpec>? = null) =

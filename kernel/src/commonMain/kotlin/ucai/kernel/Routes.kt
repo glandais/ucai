@@ -3,6 +3,8 @@ package ucai.kernel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.auth.AuthScheme
+import io.ktor.http.auth.HttpAuthHeader
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
@@ -10,7 +12,10 @@ import io.ktor.server.application.ApplicationStopped
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.authenticate
-import io.ktor.server.auth.bearer
+import io.ktor.server.auth.AuthenticationConfig
+import io.ktor.server.auth.AuthenticationContext
+import io.ktor.server.auth.AuthenticationFailedCause
+import io.ktor.server.auth.parseAuthorizationHeader
 import io.ktor.server.auth.principal
 import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.plugins.ContentTransformationException
@@ -55,16 +60,40 @@ private const val TEAM = "team"
  * answer 403 when it belongs to another team or race; public routes are read-only and never expose exact physiology,
  * private live state, modes or the seed. A missing or unknown token is a 401.
  */
+/**
+ * A bearer provider like Ktor's `bearer`, whose 401 (missing, malformed or unknown token) carries the
+ * `WWW-Authenticate: Bearer` challenge and an [ErrorResponse] body like every other error (DESIGN §4); Ktor's own
+ * bearer challenge has an empty body and cannot be customized.
+ */
+private fun AuthenticationConfig.bearerWithErrorBody(name: String, principal: suspend (String) -> Any?) {
+    val onAuthenticate: suspend (AuthenticationContext) -> Unit = { context ->
+        val header = try {
+            context.call.request.parseAuthorizationHeader()
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        val token = (header as? HttpAuthHeader.Single)?.takeIf { it.authScheme.equals(AuthScheme.Bearer, ignoreCase = true) }?.blob
+        val found = token?.let { principal(it) }
+        if (found != null) {
+            context.principal(name, found)
+        } else {
+            val cause = if (header == null) AuthenticationFailedCause.NoCredentials else AuthenticationFailedCause.InvalidCredentials
+            context.challenge("$name-bearer", cause) { challenge, call ->
+                call.response.header(HttpHeaders.WWWAuthenticate, AuthScheme.Bearer)
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("missing or unknown token"))
+                challenge.complete()
+            }
+        }
+    }
+    provider(name) { authenticate(onAuthenticate) }
+}
+
 fun Application.kernelModule(kernel: Kernel) {
     install(ContentNegotiation) { json(ApiJson) }
     install(SSE)
     install(Authentication) {
-        bearer(ADMIN) {
-            authenticate { cred -> if (kernel.isAdmin(cred.token)) AdminPrincipal else null }
-        }
-        bearer(TEAM) {
-            authenticate { cred -> kernel.principal(cred.token) }
-        }
+        bearerWithErrorBody(ADMIN) { token -> if (kernel.isAdmin(token)) AdminPrincipal else null }
+        bearerWithErrorBody(TEAM) { token -> kernel.principal(token) }
     }
     monitor.subscribe(ApplicationStopped) { kernel.close() }
 

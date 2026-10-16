@@ -39,7 +39,7 @@ class Kernel(val config: KernelConfig) {
     }
 
     suspend fun createRace(req: CreateRaceRequest): KernelRace {
-        val course = config.courses.get(req.courseId) ?: badRequest("unknown course '${req.courseId}'")
+        val course = config.courses.get(req.courseId) ?: notFound("unknown course '${req.courseId}'")
         req.wind?.let { w ->
             if (!w.fromDeg.isFinite() || !w.speed.isFinite() || w.speed !in 0.0..30.0) badRequest("wind speed must be in 0..30 m/s")
         }

@@ -196,6 +196,12 @@ class BatchRunner private constructor(
 
     companion object {
         /**
+         * The embedded kernel's default seed secret ([KernelConfig.seedSecret]): fixed, so a batch is reproducible
+         * from its seed (`UCAI_SEED_SECRET` overrides it). Pass the same secret to [Calibration.run] to rerun a race.
+         */
+        const val SEED_SECRET = "ucai-batch-runner"
+
+        /**
          * Starts the embedded kernel on [port] (0: a free one) with [courses]. Bots log WARN and ERROR through
          * [log]; the kernel logs through [kernelLog].
          */
@@ -208,11 +214,12 @@ class BatchRunner private constructor(
             kernelLog: KernelLog = KernelLog.DEFAULT,
             raceTimeout: Duration = 10.minutes,
             wallClock: (() -> String)? = null,
+            seedSecret: String = SEED_SECRET,
         ): BatchRunner {
             val requests = AtomicLong()
             val counter = createApplicationPlugin("RequestCounter") { onCall { requests.incrementAndGet() } }
             val server = startKernelServer(
-                KernelConfig(adminToken, CourseCatalog.of(courses), log = kernelLog, wallClock = wallClock),
+                KernelConfig(adminToken, CourseCatalog.of(courses), log = kernelLog, wallClock = wallClock, seedSecret = seedSecret),
                 port, host,
             ) { install(counter) }
             // One client engine for the runner and the 10 bots; no engine-level timeout (the streams have none).

@@ -9,6 +9,7 @@ import ucai.api.ApiPaths
 import ucai.api.Classification
 import ucai.api.RaceEvent
 import ucai.engine.course.Course
+import ucai.kernel.SEED_SECRET_ENV
 import ucai.runner.calibration.Calibration
 import java.io.File
 import java.time.Instant
@@ -42,6 +43,7 @@ fun main(args: Array<String>) {
     val host = opts["host"] ?: "127.0.0.1"
     val coursesDir = File(opts["courses-dir"] ?: "races/courses")
     val token = System.getenv(ApiPaths.ADMIN_TOKEN_ENV)?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+    val seedSecret = System.getenv(SEED_SECRET_ENV)?.takeIf { it.isNotEmpty() } ?: BatchRunner.SEED_SECRET
 
     val courses = coursesDir.listFiles { f -> f.isFile && f.name.endsWith(".json") }.orEmpty().sortedBy { it.name }
         .map { ApiJson.decodeFromString(Course.serializer(), it.readText()) }
@@ -52,7 +54,7 @@ fun main(args: Array<String>) {
     }
 
     val failed = runBlocking {
-        val runner = BatchRunner.start(courses, token, port, host, wallClock = { Instant.now().toString() })
+        val runner = BatchRunner.start(courses, token, port, host, wallClock = { Instant.now().toString() }, seedSecret = seedSecret)
         println("kernel on ${runner.baseUrl}")
         val runs = mutableListOf<RaceRun>()
         var mismatch = false
@@ -64,7 +66,7 @@ fun main(args: Array<String>) {
                 print(report(run, courses.first { it.id == id }))
                 println("  files       ${files.joinToString { "${it.path} (${it.length() / 1024} KiB)" }}")
                 if (compare) {
-                    val cal = Calibration.run(courses.first { it.id == id }, seed)
+                    val cal = Calibration.run(courses.first { it.id == id }, seed, secret = seedSecret)
                     val h = resultHash(cal.race.results())
                     val same = h == run.hash
                     if (!same) mismatch = true

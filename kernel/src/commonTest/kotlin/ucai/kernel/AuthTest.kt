@@ -2,7 +2,11 @@ package ucai.kernel
 
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import ucai.api.ApiJson
 import ucai.api.ApiPaths
 import ucai.api.ClockConfig
 import ucai.api.ClockMode
@@ -13,12 +17,19 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class AuthTest {
+    /** A 401 carries the bearer challenge and the usual error body (DESIGN §4). */
+    private suspend fun assertUnauthorized(r: HttpResponse, message: String? = null) {
+        assertEquals(HttpStatusCode.Unauthorized, r.status, message)
+        assertEquals("Bearer", r.headers[HttpHeaders.WWWAuthenticate], message)
+        assertEquals(ApiJson.encodeToString(ErrorResponse.serializer(), ErrorResponse("missing or unknown token")), r.bodyAsText(), message)
+    }
+
     private val create = CreateRaceRequest("short", 1, ClockConfig(ClockMode.LOCKSTEP))
 
     @Test
     fun adminRoutesNeedTheAdminToken() = kernelTest { api ->
-        assertEquals(HttpStatusCode.Unauthorized, api.post(ApiPaths.races(), CreateRaceRequest.serializer(), create, token = null).status)
-        assertEquals(HttpStatusCode.Unauthorized, api.post(ApiPaths.races(), CreateRaceRequest.serializer(), create, token = "nope").status)
+        assertUnauthorized(api.post(ApiPaths.races(), CreateRaceRequest.serializer(), create, token = null))
+        assertUnauthorized(api.post(ApiPaths.races(), CreateRaceRequest.serializer(), create, token = "nope"))
         val raceId = api.createRace()
         val team = api.register(raceId, "A")
         // A team token is not an admin token.
@@ -43,8 +54,8 @@ class AuthTest {
         val view = ApiPaths.team(raceId, a.teamId)
         val stream = ApiPaths.teamStream(raceId, a.teamId)
         for (path in listOf(view, stream)) {
-            assertEquals(HttpStatusCode.Unauthorized, api.get(path).status, "$path without a token")
-            assertEquals(HttpStatusCode.Unauthorized, api.get(path, "garbage").status)
+            assertUnauthorized(api.get(path), "$path without a token")
+            assertUnauthorized(api.get(path, "garbage"), "$path with an unknown token")
             assertEquals(HttpStatusCode.Unauthorized, api.get(path, ADMIN).status, "the admin is not a team")
             assertEquals(HttpStatusCode.Forbidden, api.get(path, b.token).status, "$path with another team's token")
             assertEquals(HttpStatusCode.Forbidden, api.get(path, c.token).status, "$path with the same team id of another race")

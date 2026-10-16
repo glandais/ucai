@@ -18,7 +18,8 @@ fun loadCourses(dir: File): List<Course> {
 
 /**
  * Kernel server: `--port 8080 --host 0.0.0.0 --courses races/courses` (or `UCAI_PORT`, `UCAI_HOST`,
- * `UCAI_COURSES`), admin token from `UCAI_ADMIN_TOKEN` (required).
+ * `UCAI_COURSES`), admin token from `UCAI_ADMIN_TOKEN` (required), seed secret from `UCAI_SEED_SECRET` (random when
+ * unset: races are then not reproducible from their seed across restarts).
  */
 fun main(args: Array<String>) {
     val opts = args.toList().chunked(2).associate { it[0].removePrefix("--") to it.getOrElse(1) { "" } }
@@ -31,11 +32,11 @@ fun main(args: Array<String>) {
     val port = opt("port", "UCAI_PORT", "8080").toInt()
     val host = opt("host", "UCAI_HOST", "0.0.0.0")
     val courses = loadCourses(File(opt("courses", "UCAI_COURSES", "races/courses")))
-    val config = KernelConfig(
-        adminToken = token,
-        courses = CourseCatalog.of(courses),
-        wallClock = { Instant.now().toString() },
-    )
+    val wallClock = { Instant.now().toString() }
+    val seedSecret = System.getenv(SEED_SECRET_ENV)?.takeIf { it.isNotEmpty() }
+    val catalog = CourseCatalog.of(courses)
+    val config = if (seedSecret == null) KernelConfig(token, catalog, wallClock = wallClock)
+    else KernelConfig(token, catalog, wallClock = wallClock, seedSecret = seedSecret)
     runBlocking {
         startKernelServer(config, port, host)
         awaitCancellation()

@@ -18,7 +18,9 @@ import ucai.engine.race.RaceObserver
 import ucai.engine.replay.ReplayRecorder
 import ucai.engine.riders.Field
 import ucai.engine.riders.RatingScale
+import ucai.engine.riders.RiderGenerator
 import ucai.kernel.decimatedDetail
+import ucai.kernel.raceSeed
 import ucai.team.strategy.StrategyParams
 import ucai.team.strategy.TeamStrategy
 import java.io.File
@@ -54,8 +56,14 @@ object Calibration {
      * The start list the kernel builds for [seed] when the 10 teams register without riders: the same generated
      * riders, rated against [RatingScale.REFERENCE] (the kernel never rates against the field, so ratings don't
      * depend on registration order). Field-relative ratings would change the strategies' roles.
+     *
+     * With the kernel's [secret] ([ucai.kernel.KernelConfig.seedSecret]), riders come from [raceSeed] like in the
+     * kernel (team names and colors stay those of the public seed, as the batch runner registers them); without it,
+     * from the bare seed (calibration runs).
      */
-    fun field(seed: Long): Field = Field.generate(seed).ratedWith(RatingScale.REFERENCE)
+    fun field(seed: Long, secret: String? = null): Field =
+        if (secret == null) Field.generate(seed).ratedWith(RatingScale.REFERENCE)
+        else Field.build(raceSeed(seed, secret), RiderGenerator.teamIdentities(seed)).ratedWith(RatingScale.REFERENCE)
 
     class Run(
         val course: Course,
@@ -76,11 +84,21 @@ object Calibration {
         fun downBy(minutes: Int) = finishGaps.count { it > minutes * 60.0 }
     }
 
-    fun run(course: Course, seed: Long, config: RaceConfig = RaceConfig(), observer: RaceObserver? = null): Run {
+    /**
+     * Runs [course] with [seed]. With [secret], the race the kernel runs with that seed secret (rider generation and
+     * engine RNG from [raceSeed], strategy parameters from the public seed, as in the batch runner).
+     */
+    fun run(
+        course: Course,
+        seed: Long,
+        config: RaceConfig = RaceConfig(),
+        observer: RaceObserver? = null,
+        secret: String? = null,
+    ): Run {
         val t0 = System.nanoTime()
-        val field = field(seed)
+        val field = field(seed, secret)
         val entrants = field.riders.map { RaceEntrant(it.id, it.teamId, it.profile) }
-        val race = Race(course, entrants, seed, config = config)
+        val race = Race(course, entrants, secret?.let { raceSeed(seed, it) } ?: seed, config = config)
         val recorder = ReplayRecorder()
         race.addObserver(recorder)
         val breakaway = RaceMetrics()

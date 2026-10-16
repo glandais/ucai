@@ -43,7 +43,7 @@ class BatchRunnerTest {
         assertEquals(a.replay.frames, b.replay.frames)
         assertEquals(a.replay.events, b.replay.events)
 
-        val harness = Calibration.run(course, 7)
+        val harness = Calibration.run(course, 7, secret = BatchRunner.SEED_SECRET)
         assertEquals(resultHash(harness.race.results()), a.hash, "the calibration harness runs the same race")
         assertEquals(harness.decisions, a.decisions)
         assertEquals(harness.replay.events, a.replay.events)

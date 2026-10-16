@@ -87,6 +87,8 @@ class KernelRace internal constructor(
     private val scope: CoroutineScope,
 ) {
     private val log = config.log
+    /** The seed riders and engine are built from: the public [seed] mixed with the kernel secret, never exposed. */
+    private val engineSeed = raceSeed(seed, config.seedSecret)
     private val mutex = Mutex()
     private val teams = mutableListOf<RegisteredTeam>()
     private val usedNames = mutableSetOf<String>()
@@ -114,8 +116,6 @@ class KernelRace internal constructor(
         val acked = HashSet<String>()
         /** Per team: riderId → last accepted order. */
         val orders = HashMap<String, LinkedHashMap<Int, Order>>()
-        /** Every accepted order per team, so a repeat after the ack is still accepted (idempotent). */
-        val sent = HashMap<String, MutableSet<Order>>()
         val done = CompletableDeferred<Unit>()
     }
 
@@ -124,7 +124,7 @@ class KernelRace internal constructor(
     // ---------------------------------------------------------------------------------------------------------
 
     /**
-     * Registers a team: id `team-NN` by registration order, riders generated from the race seed and the team index
+     * Registers a team: id `team-NN` by registration order, riders generated from the race seed (mixed with the kernel secret, [raceSeed]) and the team index
      * when [RegisterTeamRequest.riders] is omitted. Rider ids are `index × 7 + 1…`, and ratings come from
      * [RatingScale.REFERENCE] so they never depend on the other teams or the registration order.
      */
@@ -146,7 +146,7 @@ class KernelRace internal constructor(
             }
             usedNames += names
             list
-        } ?: RiderGenerator.generateTeamRiders(seed, index, perTeam, usedNames)
+        } ?: RiderGenerator.generateTeamRiders(engineSeed, index, perTeam, usedNames)
         val info = TeamInfo(RiderGenerator.teamId(index), req.name, req.color)
         val riders = specs.mapIndexed { k, s -> s.toPrivate(index * perTeam + k + 1, info.id, RatingScale.REFERENCE.rate(s.profile)) }
         RegisteredTeam(info, riders).also { teams += it }
@@ -157,7 +157,7 @@ class KernelRace internal constructor(
         if (state != RaceState.REGISTRATION) conflict("race already $state")
         if (teams.isEmpty()) conflict("no team registered")
         waitForTeams = wait
-        val race = Race(course, teams.flatMap { t -> t.riders.map { RaceEntrant(it.id, it.teamId, it.profile) } }, seed, wind)
+        val race = Race(course, teams.flatMap { t -> t.riders.map { RaceEntrant(it.id, it.teamId, it.profile) } }, engineSeed, wind)
         val rec = ReplayRecorder()
         race.addObserver(rec)
         race.addObserver(StreamObserver())
@@ -378,19 +378,18 @@ class KernelRace internal constructor(
             return@withLock rejectAll(RejectReason.STALE_DECISION, "current decision is ${p?.point?.decisionId ?: "none (race running)"}")
         }
         val result = race.validateOrders(teamId, req.decisionId, req.orders)
-        val sent = p.sent.getOrPut(teamId) { mutableSetOf() }
         val accepted = mutableListOf<Order>()
         val rejected = result.rejected.toMutableList()
         if (teamId in p.acked) {
-            // Closed decision: only a repeat of what was already sent is accepted (same body twice is idempotent).
+            // Closed decision: only a repeat of the order in effect is accepted (same body twice is idempotent).
+            val inEffect = p.orders[teamId].orEmpty()
             for (o in result.accepted) {
-                if (o in sent) accepted += o else rejected += RejectedOrder(o, RejectReason.DECISION_ACKED, "decision ${p.point.decisionId} already acked")
+                if (inEffect[o.riderId] == o) accepted += o else rejected += RejectedOrder(o, RejectReason.DECISION_ACKED, "decision ${p.point.decisionId} already acked")
             }
         } else {
             val byRider = p.orders.getOrPut(teamId) { LinkedHashMap() }
             for (o in result.accepted) {
                 byRider[o.riderId] = o
-                sent += o
                 accepted += o
             }
             if (req.ack) {
