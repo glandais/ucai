@@ -62,6 +62,7 @@
   position: relative;
   flex: 1;
   height: 32px;
+  margin: 0 8px; /* room for the thumb at both ends */
   cursor: pointer;
   touch-action: none;
   outline: none;

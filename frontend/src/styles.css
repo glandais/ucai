@@ -201,12 +201,10 @@ button:disabled {
 
 .slot-results {
   position: absolute;
-  inset: 24px;
+  inset: 0;
   z-index: 10;
   overflow: auto;
-  background: rgba(11, 15, 23, 0.94);
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  background: rgba(11, 15, 23, 0.96);
 }
 
 /* Minimal placeholder rendering, replaced by each view's own implementation. */
