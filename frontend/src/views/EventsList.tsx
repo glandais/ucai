@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { RaceEvent } from '../api/types';
 import type { RaceMeta } from '../replay/meta';
 import { formatRaceTime } from '../replay/format';
@@ -18,7 +18,10 @@ export interface EventsListProps {
 /** Riders listed in a summit's passage order. */
 const SUMMIT_RANKING = 5;
 
-export function EventsList({ meta, events }: EventsListProps) {
+/** Re-renders only when an event arrives (not on every playback frame: `t` is not displayed). */
+export const EventsList = memo(EventsListImpl, (a, b) => a.meta === b.meta && a.events === b.events);
+
+function EventsListImpl({ meta, events }: EventsListProps) {
   // Rebuilt only when a new event arrives (same array instance otherwise).
   const items = useMemo(() => buildEventItems(meta, events).reverse(), [meta, events]);
   return (
