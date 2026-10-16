@@ -233,8 +233,10 @@ Base path `/api/v1`, JSON, distances in meters, speeds in m/s, times in seconds 
 
 - **Admin token** (env var `UCAI_ADMIN_TOKEN`): creates and controls races.
 - **Team token**: returned once at team registration, `Authorization: Bearer <token>`. Scoped to one team in one race. Used for the team view, the team stream and orders.
-- **Public**: read-only race state, public stream, replays. No auth. Never exposes exact rider numbers (`cp`, `wPrime`, `durability`, `power`, `wPrimeBal`).
+- **Public**: read-only race state, public stream, replays. No auth. Never exposes exact rider numbers (`cp`, `wPrime`, `durability`, `power`, `wPrimeBal`), private live state, riders' modes or the race seed (`RaceDetail.seed` is always null in kernel responses, replays included: the seed rebuilds every profile).
+- A missing or unknown token is a `401`; a valid team token on another team's (or another race's) route is a `403`. The admin token is not a team token and vice versa.
 - Validation of every order: the rider belongs to the team, values in range, `decisionId` is the current one.
+- Errors are `{"error": "..."}` with `400` (bad body or value), `404` (unknown course, race or team), `409` (wrong race state: registration closed, already started, no snapshot before the start, no replay before the finish).
 - v1 leaves out rate limiting and CORS: the frontend uses the Vite dev proxy. TLS is left to a reverse proxy.
 
 ### Courses (public)
@@ -242,7 +244,7 @@ Base path `/api/v1`, JSON, distances in meters, speeds in m/s, times in seconds 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/courses` | List courses (id, name, distance, elevation gain). |
-| GET | `/courses/{courseId}` | Full course: decimated points, profile, climbs. |
+| GET | `/courses/{courseId}` | Full course: points decimated to one every 50 m (finish kept), profile, climbs. |
 
 ### Races
 
@@ -252,11 +254,15 @@ Base path `/api/v1`, JSON, distances in meters, speeds in m/s, times in seconds 
 | GET | `/races` | public | List races (state, course, start time). |
 | GET | `/races/{raceId}` | public | Metadata, public start list (archetypes and ratings), current state. |
 | POST | `/races/{raceId}/teams` | admin | Register a team: `{name, color, riders?: [...]}` (riders generated if omitted) → `{teamId, token, riders}` with the riders' **full** profiles. |
-| POST | `/races/{raceId}/start` | admin | Start. |
+| POST | `/races/{raceId}/start[?wait=false]` | admin | Start → the public race detail. See "Start" below. |
 | GET | `/races/{raceId}/state` | public | Current public snapshot. |
 | GET | `/races/{raceId}/stream` | public | **SSE** public stream (see below). |
 | GET | `/races/{raceId}/results` | public | Classification (partial while racing). |
 | GET | `/races/{raceId}/replay` | public | Full recording (finished races). |
+
+Registration (kernel v1): teams get ids `team-01`, `team-02`… in registration order (at most 10, unique names, `#rrggbb` colors) and rider ids `index × 7 + 1…7`. Generated riders come from the race seed and the team index (independent streams, so a team's riders never depend on the others), explicit riders must be 7 and pass the profile limits. Public ratings are computed against `RatingScale.REFERENCE` (a fixed reference field), so they do not depend on the other teams nor on the registration order.
+
+Start: in `lockstep`, a team whose stream has **never** connected is waited for — the race is `running` but held at decision 0 (or any later decision) until that team connects and acks, with no timeout. So a runner can register teams, start its bots and call start in any order: a bot that connects after the start receives the pending decision on connect. A team that connected and whose stream then closed is auto-acked with no orders at every decision until it reconnects (logged once per absence). `?wait=false` auto-acks never-connected teams too (a race with absent teams, e.g. for tests or demos).
 
 ### Team (controller)
 
@@ -268,13 +274,14 @@ Base path `/api/v1`, JSON, distances in meters, speeds in m/s, times in seconds 
 
 Order semantics:
 - In `lockstep`, orders are only accepted for the **current** `decisionId`; stale ones are rejected. All orders of a decision point are applied together when every team has acked, in a canonical order (`teamId`, then `riderId`; for the same rider, the last order sent wins). Arrival order never matters.
-- `ack: true` closes the team's decision. Sending orders without `ack` is allowed; sending the same body twice is idempotent.
-- In `realtime`, `decisionId` is optional and orders apply at the next tick.
+- `ack: true` closes the team's decision. Sending orders without `ack` is allowed; sending the same body twice is idempotent. After the ack the team's orders are frozen: a repeat of an order already sent is accepted (no-op), any other is rejected with `decision_acked`.
+- A missing `decisionId` (`missing_decision`), a stale one (`stale_decision`, no ack) or a race that is not running (`race_not_running`) answer `409` with every order rejected; otherwise `200`.
+- In `realtime`, `decisionId` is optional (ignored) and orders apply at the next tick.
 - The response lists accepted and rejected orders with a reason.
 
 ### SSE streams
 
-Standard `text/event-stream`, event `id` = tick. No resume buffer in v1 (`Last-Event-ID` ignored): a reconnecting client starts with a fresh `snapshot`.
+Standard `text/event-stream`, event `id` = tick. No resume buffer in v1 (`Last-Event-ID` ignored): a reconnecting client starts with a fresh `snapshot`. A stream opens with `state`, then (once started) a `snapshot`, and on a team stream the `team` state and the pending `decision` if the team has not acked it. When the race finishes the kernel sends the final `snapshot` and `state: finished`, then closes every stream. A comment heartbeat (1 s) lets the kernel notice a closed connection while the race waits. A client more than 4096 events behind is disconnected (it reconnects with a fresh snapshot); the tick loop never waits for a client.
 
 | Event | Payload | Rate |
 |-------|---------|------|
@@ -284,11 +291,11 @@ Standard `text/event-stream`, event `id` = tick. No resume buffer in v1 (`Last-E
 | `decision` (team stream only) | `{decisionId, tick, reasons, snapshot, team, events}` — the public snapshot, own riders' full state, and the events since the previous decision | at each decision point |
 | `team` (team stream only) | own riders: `power, wPrimeBal, cpEff, wPrimeEff, energyKj, mode` | with snapshots |
 
-A bot can make all its decisions from the `decision` event alone, with no extra GET.
+A bot can make all its decisions from the `decision` event alone, with no extra GET. `realtime` races (1 tick per wall second) send no `decision` events in v1: controllers follow `snapshot` / `team` and post orders at any time.
 
 ### Replay format
 
-`GET /races/{raceId}/replay` (gzip):
+`GET /races/{raceId}/replay` (`Content-Encoding: gzip` when the client sends `Accept-Encoding: gzip`, plain JSON otherwise; encoded once at the finish). `course` is the decimated public course, `race.seed` is null:
 
 ```json
 { "version": 1, "race": {...}, "course": {...}, "teams": [...], "riders": [...],
@@ -328,7 +335,7 @@ The `runner` module:
      --seed 42 --out replays/"
 ```
 
-1. Starts the kernel (embedded Ktor server, CIO) on a local port.
+1. Starts the kernel (embedded Ktor server, CIO) on a local port: `startKernelServer(KernelConfig(adminToken, CourseCatalog.of(courses)), port = 0)` returns the bound port and the `Kernel`. Standalone: `UCAI_ADMIN_TOKEN=… ./gradlew :kernel:run --args="--port 8080"` loads `races/courses/`.
 2. For each course: creates a race (`lockstep` clock), registers 10 teams, starts **10 team bots in the same process** (coroutines) that connect over HTTP with their tokens.
 3. Runs to the finish, writes `replays/<course>-<seed>.json.gz` and `results.json`, prints the top 10, the key events and a **result hash**.
 4. Exits (or keeps serving the replays with `--serve`, for the frontend).
@@ -360,7 +367,7 @@ Later: camera following a group, higher playback speeds, clickable events.
 - Physics unit tests: steady speeds against known values (e.g. 400 W, 70 kg, flat, CdA 0.32 → ≈ 43 km/h solo; 6 % climb: 400 W → ≈ 24 km/h, 21 km/h at ≈ 335 W), drafting gain, W′bal drain/recovery, durability loss.
 - Group logic tests: split/merge with synthetic riders, including hysteresis (no oscillation around the threshold), a group with no `pull` rider, descents.
 - Course import tests: distance within 1 % of the official one after the km 0 cut, elevation gain plausible, LBL built from the two race lines only.
-- API tests (Ktor `testApplication`): auth scopes, no private numbers on public endpoints, order validation, stale `decisionId` rejected.
+- API tests (Ktor `testApplication`): auth scopes, no private numbers on public endpoints, order validation, stale `decisionId` rejected. The streaming tests (a full lockstep race driven by minimal in-test bots over HTTP + SSE, the `decision` payload, auto-ack of a closed stream, privacy of both streams) run on the real embedded CIO server on a free port, as the runner starts it: Ktor's test engine only delivers a streamed response once it ends.
 - **Calibration harness** (no HTTP): scripted strategies run directly against the engine, to tune durability, default rotation and sprint before the bots exist.
 - Batch determinism: 2 runs with the same seed → identical result hash.
 - Sanity on results: winning average speed in a realistic range (40–44 km/h Sanremo, 39–42 LBL/Lombardia), finale gaps of seconds to a minute or two, not 20 min; different seeds give different winners.

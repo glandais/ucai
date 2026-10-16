@@ -22,6 +22,7 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.ktor.server.test.host)
+            implementation(libs.ktor.client.cio)
             implementation(libs.kotlinx.coroutines.test)
         }
         // JVM entry point only (main + CIO bootstrap, logging backend).
@@ -29,4 +30,15 @@ kotlin {
             runtimeOnly(libs.logback.classic)
         }
     }
+}
+
+// Kernel server: `UCAI_ADMIN_TOKEN=... ./gradlew :kernel:run --args="--port 8080"`.
+// Paths (races/courses) are relative to the repository root.
+tasks.register<JavaExec>("run") {
+    group = "application"
+    description = "Runs the kernel server (CIO) on the courses of races/courses"
+    mainClass = "ucai.kernel.MainKt"
+    val main = kotlin.jvm().compilations.getByName("main")
+    classpath = files(main.output.allOutputs, main.runtimeDependencyFiles)
+    workingDir = rootDir
 }
