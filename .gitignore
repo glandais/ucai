@@ -1,0 +1,8 @@
+build/
+.gradle/
+.kotlin/
+replays/
+frontend/node_modules/
+.idea/
+*.iml
+local.properties
