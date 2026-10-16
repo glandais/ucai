@@ -11,7 +11,6 @@ import ucai.api.PrivateRiderState
 import ucai.api.PublicRider
 import ucai.api.RaceEvent
 import ucai.api.RiderMode
-import ucai.api.RiderStatus
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.random.Random
@@ -240,7 +239,7 @@ class TeamStrategy(
         chase(v, want.keys, ::assign)
         control(v, want.keys, ::assign)
         for (s in v.mine) {
-            if (s.status != RiderStatus.RACING) continue
+            if (!s.status.onRoad) continue
             val role = roles.role(s.riderId)
             val spentRole = role == Role.DOMESTIQUE || role == Role.LIEUTENANT
             if (spentRole && v.spent(s.riderId)) {
@@ -282,7 +281,7 @@ class TeamStrategy(
         val head: GroupSummary? = groups.firstOrNull()
         val peloton: GroupSummary? = groups.maxWithOrNull(compareBy<GroupSummary> { it.size }.thenBy { -it.headDistM })
 
-        fun racing(id: Int) = state[id]?.status == RiderStatus.RACING
+        fun racing(id: Int) = state[id]?.status?.onRoad == true
         fun state(id: Int): PrivateRiderState = state.getValue(id)
         fun group(id: Int): GroupSummary? = state[id]?.let { groupById[it.groupId] }
         fun toGo(id: Int) = finishM - state(id).distM
@@ -290,7 +289,7 @@ class TeamStrategy(
         fun cpFrac(id: Int): Double = state(id).cpEff / ownById.getValue(id).profile.cp
         fun spent(id: Int) = cpFrac(id) < Tactics.SPENT_CP || w(id) < Tactics.SPENT_W
         fun teammatesIn(groupId: Int, except: Set<Int>) =
-            mine.filter { it.status == RiderStatus.RACING && it.groupId == groupId && it.riderId !in except }
+            mine.filter { it.status.onRoad && it.groupId == groupId && it.riderId !in except }
         val pelotonIsHead get() = peloton != null && peloton.id == head?.id
 
         /** Another group less than [s] behind [g] (false without a group). */
@@ -301,7 +300,7 @@ class TeamStrategy(
 
         /** The rider the team rides for now: the leader, else the lieutenant, else the sprinter, else anyone. */
         val leaderId: Int? = listOfNotNull(roles.leader.id, roles.lieutenant?.id, roles.sprinter.id)
-            .firstOrNull { racing(it) } ?: mine.firstOrNull { it.status == RiderStatus.RACING }?.riderId
+            .firstOrNull { racing(it) } ?: mine.firstOrNull { it.status.onRoad }?.riderId
     }
 
     private fun pull(id: Int, intensity: Double) = Order(id, RiderMode.PULL, intensity = intensity)

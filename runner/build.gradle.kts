@@ -12,12 +12,23 @@ dependencies {
     implementation(projects.kernel)
     implementation(projects.team)
     implementation(libs.kotlinx.coroutines.core)
+    // Admin HTTP client of the batch runner, and the request-counting plugin installed on the embedded kernel.
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.server.core)
     runtimeOnly(libs.logback.classic)
     testImplementation(kotlin("test"))
 }
 
 application {
     mainClass = "ucai.runner.MainKt"
+}
+
+// Batch runner (DESIGN §6): paths (races/courses, replays/) are relative to the repository root.
+tasks.named<JavaExec>("run") {
+    workingDir = rootDir
 }
 
 tasks.test {

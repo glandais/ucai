@@ -1,6 +1,5 @@
 package ucai.runner.calibration
 
-import ucai.engine.riders.Field
 import java.io.File
 
 /**
@@ -23,7 +22,7 @@ fun main(args: Array<String>) {
         val runs = mutableListOf<Calibration.Run>()
         for (seed in seeds) {
             val trace = if (opts["trace"] == "true") {
-                val field = Field.generate(seed)
+                val field = Calibration.field(seed)
                 val watch = opts["watch"]?.split(',')?.map { it.trim().toInt() }?.toSet().orEmpty()
                 Trace((opts["trace-step"] ?: "10000").toDouble(), watch) { rider -> field.rider(rider)!!.profile.cp }
             } else null

@@ -3,7 +3,6 @@ package ucai.runner.calibration
 import ucai.api.ApiJson
 import ucai.api.ClockConfig
 import ucai.api.ClockMode
-import ucai.api.DecisionEvent
 import ucai.api.Order
 import ucai.api.RaceDetail
 import ucai.api.RaceEvent
@@ -11,7 +10,6 @@ import ucai.api.RaceState
 import ucai.api.RejectedOrder
 import ucai.api.Replay
 import ucai.api.ResultEntry
-import ucai.api.RiderStatus
 import ucai.engine.course.Course
 import ucai.engine.race.Race
 import ucai.engine.race.RaceConfig
@@ -19,6 +17,8 @@ import ucai.engine.race.RaceEntrant
 import ucai.engine.race.RaceObserver
 import ucai.engine.replay.ReplayRecorder
 import ucai.engine.riders.Field
+import ucai.engine.riders.RatingScale
+import ucai.kernel.decimatedDetail
 import ucai.team.strategy.StrategyParams
 import ucai.team.strategy.TeamStrategy
 import java.io.File
@@ -50,6 +50,13 @@ object Calibration {
         }
     }
 
+    /**
+     * The start list the kernel builds for [seed] when the 10 teams register without riders: the same generated
+     * riders, rated against [RatingScale.REFERENCE] (the kernel never rates against the field, so ratings don't
+     * depend on registration order). Field-relative ratings would change the strategies' roles.
+     */
+    fun field(seed: Long): Field = Field.generate(seed).ratedWith(RatingScale.REFERENCE)
+
     class Run(
         val course: Course,
         val seed: Long,
@@ -71,7 +78,7 @@ object Calibration {
 
     fun run(course: Course, seed: Long, config: RaceConfig = RaceConfig(), observer: RaceObserver? = null): Run {
         val t0 = System.nanoTime()
-        val field = Field.generate(seed)
+        val field = field(seed)
         val entrants = field.riders.map { RaceEntrant(it.id, it.teamId, it.profile) }
         val race = Race(course, entrants, seed, config = config)
         val recorder = ReplayRecorder()
@@ -79,7 +86,8 @@ object Calibration {
         val breakaway = RaceMetrics()
         race.addObserver(breakaway)
         observer?.let { race.addObserver(it) }
-        val detailCourse = course.toDetail()
+        // What a bot gets from `GET /courses/{id}`: points decimated to one every 50 m.
+        val detailCourse = course.decimatedDetail()
         val params = teamParams(seed, field.teamInfos.map { it.id })
         val strategies = field.teams.associate { t ->
             t.info.id to TeamStrategy(t.info.id, detailCourse, field.publicRiders(), t.riders, params.getValue(t.info.id))
@@ -94,7 +102,7 @@ object Calibration {
             decisions++
             val orders = LinkedHashMap<String, List<Order>>()
             for ((teamId, s) in strategies) {
-                val o = s.decide(race.decisionEvent(teamId)!!.droppedAsRacing())
+                val o = s.decide(race.decisionEvent(teamId)!!)
                 if (o.isNotEmpty()) orders[teamId] = o
                 sent += o.size
             }
@@ -112,14 +120,6 @@ object Calibration {
         val replay = recorder.replay(detail, race)
         return Run(course, seed, field, race, replay, strategies, rejected, decisions, sent, simMillis, breakaway)
     }
-
-    /**
-     * Compatibility shim: the v1 [TeamStrategy] predates the engine's `dropped` status and only gives orders to
-     * riders whose status is `racing`. Until team/ checks `RiderStatus.onRoad`, the harness shows dropped riders as
-     * racing so the strategy keeps managing them (the HTTP bot needs the same fix on the team side).
-     */
-    private fun DecisionEvent.droppedAsRacing(): DecisionEvent =
-        copy(team = team.map { if (it.status == RiderStatus.DROPPED) it.copy(status = RiderStatus.RACING) else it })
 
     fun writeReplay(replay: Replay, file: File) {
         file.parentFile?.mkdirs()
