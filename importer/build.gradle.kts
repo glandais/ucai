@@ -21,3 +21,11 @@ application {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Paths (races/raw, races/courses) are relative to the repository root.
+tasks.named<JavaExec>("run") {
+    workingDir = rootDir
+}
+tasks.test {
+    workingDir = rootDir
+}
