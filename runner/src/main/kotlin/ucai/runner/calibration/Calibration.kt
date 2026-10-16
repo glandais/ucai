@@ -3,6 +3,7 @@ package ucai.runner.calibration
 import ucai.api.ApiJson
 import ucai.api.ClockConfig
 import ucai.api.ClockMode
+import ucai.api.DecisionEvent
 import ucai.api.Order
 import ucai.api.RaceDetail
 import ucai.api.RaceEvent
@@ -10,6 +11,7 @@ import ucai.api.RaceState
 import ucai.api.RejectedOrder
 import ucai.api.Replay
 import ucai.api.ResultEntry
+import ucai.api.RiderStatus
 import ucai.engine.course.Course
 import ucai.engine.race.Race
 import ucai.engine.race.RaceConfig
@@ -92,7 +94,7 @@ object Calibration {
             decisions++
             val orders = LinkedHashMap<String, List<Order>>()
             for ((teamId, s) in strategies) {
-                val o = s.decide(race.decisionEvent(teamId)!!)
+                val o = s.decide(race.decisionEvent(teamId)!!.droppedAsRacing())
                 if (o.isNotEmpty()) orders[teamId] = o
                 sent += o.size
             }
@@ -110,6 +112,14 @@ object Calibration {
         val replay = recorder.replay(detail, race)
         return Run(course, seed, field, race, replay, strategies, rejected, decisions, sent, simMillis, breakaway)
     }
+
+    /**
+     * Compatibility shim: the v1 [TeamStrategy] predates the engine's `dropped` status and only gives orders to
+     * riders whose status is `racing`. Until team/ checks `RiderStatus.onRoad`, the harness shows dropped riders as
+     * racing so the strategy keeps managing them (the HTTP bot needs the same fix on the team side).
+     */
+    private fun DecisionEvent.droppedAsRacing(): DecisionEvent =
+        copy(team = team.map { if (it.status == RiderStatus.DROPPED) it.copy(status = RiderStatus.RACING) else it })
 
     fun writeReplay(replay: Replay, file: File) {
         file.parentFile?.mkdirs()

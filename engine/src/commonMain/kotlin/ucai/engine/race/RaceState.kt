@@ -60,7 +60,8 @@ internal class RiderState(val entrant: RaceEntrant, val index: Int, startSpeed: 
     var computed = false
     var aheadGapM = Double.POSITIVE_INFINITY
 
-    val racing: Boolean get() = status == RiderStatus.RACING
+    /** On the road: [RiderStatus.RACING] or [RiderStatus.DROPPED] (a dropped rider still rides and takes orders). */
+    val racing: Boolean get() = status.onRoad
 
     fun privateState() = PrivateRiderState(
         riderId = id, distM = distM, speed = speed, power = power,

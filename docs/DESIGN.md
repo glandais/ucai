@@ -125,6 +125,8 @@ Public profile: name, team, archetype and **ratings from 1 to 5** (climbing, pun
 
 `distM`, `speed`, `power`, `wPrimeBal`, `cpEff`, `wPrimeEff`, `energyKj` (work done), `groupId`, `rankInGroup`, `mode`, `status` (`racing` | `dropped` | `finished` | `abandoned`).
 
+`dropped`: a rider who loses contact with his group — alone or in a pair splitting off the back, the `rider_dropped` event — is `dropped` until his group merges with another one (he bridges back, or a group from behind catches him), then `racing` again. A dropped rider is still on the road: he rides, takes orders and finishes like the others (`RiderStatus.onRoad` is `racing` or `dropped`). Controllers must not read `status == racing` as "still in the race".
+
 `abandoned` is not used in v1 (no crashes or mechanicals) but is part of the model, and the engine uses a seeded RNG so incidents can be added in v2.
 
 ---
