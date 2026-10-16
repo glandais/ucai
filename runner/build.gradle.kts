@@ -22,4 +22,15 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+    workingDir = rootDir
+}
+
+// Calibration harness (DESIGN §8): scripted team strategies against the engine, no HTTP.
+// Paths (races/courses, replays/) are relative to the repository root.
+tasks.register<JavaExec>("calibrate") {
+    group = "application"
+    description = "Runs the calibration harness on the monuments and writes replays/"
+    mainClass = "ucai.runner.calibration.CalibrateKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
 }

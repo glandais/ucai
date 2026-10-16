@@ -1,0 +1,171 @@
+package ucai.runner.calibration
+
+import ucai.api.ApiJson
+import ucai.api.ClockConfig
+import ucai.api.ClockMode
+import ucai.api.Order
+import ucai.api.RaceDetail
+import ucai.api.RaceEvent
+import ucai.api.RaceState
+import ucai.api.RejectedOrder
+import ucai.api.Replay
+import ucai.api.ResultEntry
+import ucai.engine.course.Course
+import ucai.engine.race.Race
+import ucai.engine.race.RaceConfig
+import ucai.engine.race.RaceEntrant
+import ucai.engine.race.RaceObserver
+import ucai.engine.replay.ReplayRecorder
+import ucai.engine.riders.Field
+import ucai.team.strategy.StrategyParams
+import ucai.team.strategy.TeamStrategy
+import java.io.File
+import java.util.Locale
+import java.util.zip.GZIPOutputStream
+import kotlin.random.Random
+
+/**
+ * Calibration harness (DESIGN §8, §9 step 2): the team v1 strategies drive the engine directly, no HTTP.
+ * Each team's [TeamStrategy] gets exactly the `decision` event the kernel would stream to it.
+ */
+object Calibration {
+    fun loadCourse(dir: File, id: String): Course =
+        ApiJson.decodeFromString(Course.serializer(), File(dir, "$id.json").readText())
+
+    /**
+     * Team configs for a race, seeded: 3 or 4 teams send a rider in the early break, aggressiveness in
+     * [0.3, 0.9]; control is left to each strategy (the 3 teams whose leader looks strongest).
+     */
+    fun teamParams(seed: Long, teamIds: List<String>): Map<String, StrategyParams> {
+        val rnd = Random(seed * 31 + 7)
+        val breakTeams = teamIds.shuffled(rnd).take(3 + rnd.nextInt(2)).toSet()
+        return teamIds.withIndex().associate { (i, id) ->
+            id to StrategyParams(
+                aggressiveness = rnd.nextDouble(0.3, 0.9),
+                breakaway = id in breakTeams,
+                seed = seed * 1_000 + i,
+            )
+        }
+    }
+
+    class Run(
+        val course: Course,
+        val seed: Long,
+        val field: Field,
+        val race: Race,
+        val replay: Replay,
+        val strategies: Map<String, TeamStrategy>,
+        val rejected: List<RejectedOrder>,
+        val decisions: Int,
+        val ordersSent: Int,
+        val simMillis: Long,
+    )
+
+    fun run(course: Course, seed: Long, config: RaceConfig = RaceConfig(), observer: RaceObserver? = null): Run {
+        val t0 = System.nanoTime()
+        val field = Field.generate(seed)
+        val entrants = field.riders.map { RaceEntrant(it.id, it.teamId, it.profile) }
+        val race = Race(course, entrants, seed, config = config)
+        val recorder = ReplayRecorder()
+        race.addObserver(recorder)
+        observer?.let { race.addObserver(it) }
+        val detailCourse = course.toDetail()
+        val params = teamParams(seed, field.teamInfos.map { it.id })
+        val strategies = field.teams.associate { t ->
+            t.info.id to TeamStrategy(t.info.id, detailCourse, field.publicRiders(), t.riders, params.getValue(t.info.id))
+        }
+
+        val rejected = mutableListOf<RejectedOrder>()
+        var decisions = 0
+        var sent = 0
+        var dp: ucai.engine.race.DecisionPoint? = race.start()
+        while (dp != null) {
+            val point = dp
+            decisions++
+            val orders = LinkedHashMap<String, List<Order>>()
+            for ((teamId, s) in strategies) {
+                val o = s.decide(race.decisionEvent(teamId)!!)
+                if (o.isNotEmpty()) orders[teamId] = o
+                sent += o.size
+            }
+            if (orders.isNotEmpty()) race.applyOrders(point.decisionId, orders).values.forEach { rejected += it.rejected }
+            dp = race.runToNextDecision()
+        }
+        val simMillis = (System.nanoTime() - t0) / 1_000_000
+
+        val raceId = "${course.id}-$seed"
+        val detail = RaceDetail(
+            id = raceId, courseId = course.id, courseName = course.name, state = RaceState.FINISHED,
+            clock = ClockConfig(ClockMode.LOCKSTEP), teams = field.teamInfos, riders = field.publicRiders(),
+            tick = race.tick, seed = seed,
+        )
+        val replay = recorder.replay(detail, race)
+        return Run(course, seed, field, race, replay, strategies, rejected, decisions, sent, simMillis)
+    }
+
+    fun writeReplay(replay: Replay, file: File) {
+        file.parentFile?.mkdirs()
+        GZIPOutputStream(file.outputStream().buffered()).bufferedWriter().use {
+            it.write(ApiJson.encodeToString(Replay.serializer(), replay))
+        }
+    }
+
+    /** Finishing groups by UCI group time (riders sharing a gap), front first. */
+    fun finishGroups(results: List<ResultEntry>): List<List<ResultEntry>> {
+        val out = mutableListOf<MutableList<ResultEntry>>()
+        var last: Double? = null
+        for (e in results) {
+            val gap = e.gapS ?: continue
+            if (last == null || gap != last) out += mutableListOf<ResultEntry>()
+            out.last() += e
+            last = gap
+        }
+        return out
+    }
+
+    fun report(r: Run): String {
+        val results = r.race.results()
+        val winner = results.first()
+        val w = r.field.rider(winner.riderId)!!
+        val strat = r.strategies.getValue(w.teamId)
+        val time = winner.timeS!!
+        val speed = r.course.distanceM / time * 3.6
+        val groups = finishGroups(results)
+        val events = r.race.events
+        fun fmt(s: Double) = "%d:%02d:%02d".format(Locale.ROOT, (s / 3600).toInt(), ((s % 3600) / 60).toInt(), (s % 60).toInt())
+        val sb = StringBuilder()
+        sb.appendLine("== ${r.course.name} seed ${r.seed}")
+        sb.appendLine(
+            "  winner      #${w.id} ${w.name} (${w.archetype.name.lowercase()}, ${strat.roles.role(w.id).name.lowercase()} of ${w.teamId})" +
+                " in ${fmt(time)}, avg ${"%.2f".format(Locale.ROOT, speed)} km/h",
+        )
+        val dnf = results.count { it.position == null }
+        if (dnf > 0) sb.appendLine("  NOT FINISHED $dnf riders (stalled, max ticks ${r.race.config.maxTicks})")
+        sb.appendLine("  groups      ${groups.size} at the finish, sizes ${groups.map { it.size }}")
+        sb.appendLine(
+            "  top 10      " + results.take(10).joinToString("  ") { e ->
+                val a = r.field.rider(e.riderId)!!.archetype.name.take(3).lowercase()
+                "${e.riderId}($a)+${"%.0f".format(Locale.ROOT, e.gapS)}s"
+            },
+        )
+        val leaders = r.strategies.values.map { it.roles.leader.id }.toSet()
+        val leaderPos = results.filter { it.riderId in leaders }.map { it.position }
+        sb.appendLine("  leaders at  $leaderPos")
+        sb.appendLine(
+            "  events      attacks ${events.count { it is RaceEvent.Attack }}, splits ${events.count { it is RaceEvent.GroupSplit }}," +
+                " merges ${events.count { it is RaceEvent.GroupMerge }}, dropped ${events.count { it is RaceEvent.RiderDropped }}",
+        )
+        sb.appendLine(
+            "  attack log  " + events.filterIsInstance<RaceEvent.Attack>().joinToString("  ") { a ->
+                val ar = r.field.rider(a.riderId)!!
+                "km${"%.0f".format(Locale.ROOT, a.distM / 1000)} #${a.riderId} ${r.strategies.getValue(ar.teamId).roles.role(a.riderId).name.take(4).lowercase()}"
+            },
+        )
+        sb.appendLine(
+            "  run         ${r.simMillis} ms, ${r.race.tick} ticks, ${r.decisions} decisions, ${r.ordersSent} orders, " +
+                "${r.rejected.size} rejected, ${r.replay.frames.size} frames",
+        )
+        if (r.rejected.isNotEmpty()) sb.appendLine("  REJECTED    ${r.rejected.take(5)}")
+        return sb.toString()
+    }
+}
