@@ -12,7 +12,11 @@ import kotlin.math.sqrt
 /** Physical constants of the kernel v1 model (DESIGN §3 "Physics"). */
 object PhysicsConstants {
     const val G = 9.81
-    const val CRR = 0.004
+    /**
+     * Rolling resistance of race tyres (25–28 mm, high pressure) on good asphalt: drum tests give 0.0025–0.003,
+     * field coast-downs about 0.0032 (Martin et al. 1998). Was 0.004, a training tyre on a rough road.
+     */
+    const val CRR = 0.0032
     const val ETA = 0.976
     const val RHO_SEA_LEVEL = 1.225
     const val MAX_ACCEL = 1.5
