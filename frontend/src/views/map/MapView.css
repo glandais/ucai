@@ -1,0 +1,194 @@
+.mapview {
+  position: absolute;
+  inset: 0;
+  background: #dde3ea;
+}
+
+.mapview-map {
+  position: absolute;
+  inset: 0;
+}
+
+/* --- Camera buttons ------------------------------------------------------------------------------- */
+
+.mapview-controls {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 70px);
+  pointer-events: none;
+}
+
+.mapview-controls > * {
+  pointer-events: auto;
+}
+
+.mapview-controls button {
+  background: rgba(19, 26, 38, 0.92);
+  font-weight: 600;
+  padding: 5px 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.mapview-controls button.active {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.mapview-following {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 4px;
+  background: rgba(19, 26, 38, 0.92);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.mapview-controls .mapview-following button {
+  padding: 0 7px;
+  box-shadow: none;
+  line-height: 20px;
+}
+
+.mapview-hint {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(19, 26, 38, 0.7);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Group labels (HTML markers) ------------------------------------------------------------------ */
+
+.mv-group {
+  display: flex;
+  align-items: stretch;
+  height: 22px;
+  border-radius: 3px;
+  overflow: hidden;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  white-space: nowrap;
+  color: var(--text);
+  background: rgba(19, 26, 38, 0.92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mv-group:hover {
+  outline: 1px solid var(--accent);
+}
+
+.mv-group.followed {
+  outline: 2px solid var(--accent);
+}
+
+.mv-group-size {
+  min-width: 24px;
+  padding: 0 6px;
+  text-align: center;
+  background: var(--panel-2);
+  border-right: 1px solid var(--line);
+}
+
+.mv-group.lead .mv-group-size {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.mv-group-title {
+  padding: 0 7px;
+  letter-spacing: 0.03em;
+}
+
+.mv-group-gap {
+  padding: 0 7px 0 0;
+  color: var(--accent);
+}
+
+/* --- Climbs, start and finish --------------------------------------------------------------------- */
+
+.mv-climb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.mv-climb-name {
+  margin-bottom: 2px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #7a3b00;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.mv-climb-name[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
+.mv-climb-tri {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 10px solid #ff9500;
+  filter: drop-shadow(0 0 1px #000);
+}
+
+.mv-flag {
+  display: flex;
+  gap: 4px;
+  padding: 2px 6px;
+  border-left: 3px solid #111;
+  border-radius: 0 3px 3px 0;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.mv-start {
+  background: #ffffff;
+  color: #111111;
+}
+
+.mv-finish {
+  background: repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0 / 8px 8px;
+  color: #111111;
+}
+
+.mv-finish span {
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0 3px;
+}
+
+.mv-flag-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.mv-flag-count[hidden] {
+  display: none;
+}
