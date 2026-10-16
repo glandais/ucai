@@ -192,6 +192,8 @@ Each tick:
 4. **Merge**: a group that comes within **1 s** of the group ahead merges into it.
 5. **Attack**: a rider in `attack` mode leaves with a burst; they become a new group once the split rule fires. Other riders only respond if their controller tells them to (`follow` with `targetRiderId`); otherwise the group keeps its pace.
 
+**Time gaps.** `GroupSummary.gapS` (snapshots, decisions) is a real time gap, computed by the engine (`PassTimes`): it keeps when the head of the race passed each course point (10 m resolution, interpolated between ticks) and a group's gap is how long ago the head passed the group's front rider. The head is the furthest rider ever, finished riders included, so after the winner's finish gaps are to the winner, like the results. Strategies, kernel, harness (`RaceView.gapAt`) and the frontend (which computes its own from the frames, the same way) agree. The first version, distance ÷ the group's current speed, inflated gaps when the group was climbing (and shrank them on descents).
+
 Only stable groups produce events (`group_split`, `group_merge`), which avoids event storms and useless decision points.
 
 Cost: O(riders) per tick. With 70 riders and ~25 000 ticks per race, a race takes well under a second of CPU time without controllers. HTTP round-trips at decision points dominate batch time.
@@ -285,7 +287,7 @@ Standard `text/event-stream`, event `id` = tick. No resume buffer in v1 (`Last-E
 
 | Event | Payload | Rate |
 |-------|---------|------|
-| `snapshot` | `{tick, raceTimeS, riders: [[riderId, distM, speed, groupId, rankInGroup]], groups: [{id, headDistM, size, gapS}]}` | every tick, but at most ~10 per wall second |
+| `snapshot` | `{tick, raceTimeS, riders: [[riderId, distM, speed, groupId, rankInGroup]], groups: [{id, headDistM, size, gapS}]}` (`gapS`: real time gap to the head of the race, §3 "Time gaps") | every tick, but at most ~10 per wall second |
 | `event` | `{tick, type, ...}` | when it happens |
 | `state` | `{state: registration|running|finished}` | on change |
 | `decision` (team stream only) | `{decisionId, tick, reasons, snapshot, team, events}` — the public snapshot, own riders' full state, and the events since the previous decision | at each decision point |
@@ -380,17 +382,49 @@ Later: camera following a group, higher playback speeds, clickable events.
 
 ### Calibration (harness, default `RaceConfig`, seeds 1..8)
 
-`./gradlew :runner:calibrate --args="--seeds 1..8"` prints one report per race and a summary per course (`--trace true` adds a line every 10 km). The tuned numbers live in `ucai.engine.physics.Tuning` (engine) and `ucai.team.strategy.Tactics` (strategy).
+`./gradlew :runner:calibrate --args="--seeds 1..8"` prints one report per race (with its score and nonzero terms), a summary per course (with the course score and the mean penalty of each term) and the score per course and in total at the end (`--trace true` adds a line every 10 km). The tuned numbers live in `ucai.engine.physics.Tuning` (engine) and `ucai.team.strategy.Tactics` (strategy).
 
-| Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min |
-|--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|
-| Milano-Sanremo | 40.6–41.7 km/h | sprinter 6, puncheur 2 | 0–1 s, a bunch sprint | 3–3.7 min, km 258–271 of 297 | +19–44 min, 0–9 |
-| Liège-Bastogne-Liège | 37.7–38.9 km/h | puncheur 6, all-rounder 1, climber 1 | 0–17 s | 2.5–3.4 min, km 209–222 of 257 (once it won) | +38–53 min, 5–16 |
-| Il Lombardia | 36.2–37.0 km/h | climber 7, puncheur 1 | 0–75 s | 3–5 min, km 208–221 of 238 (once it won) | +28–59 min, 4–10 |
+Baseline before the final pass (real time gaps, seeds 1..8, score 44.96):
 
-Since batch 3 the harness uses the kernel's start list and public course (§6 "Harness = kernel"): the table was measured again with it.
+| Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min | Peloton at half distance | CP lost, leaders / domestiques | Score |
+|--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|--------------------------|--------------------------------|-------|
+| Milano-Sanremo | 40.6–41.7 km/h | sprinter 7, puncheur 1 | 0–1 s, a bunch sprint | 3.2–4 min, km 257–272 of 297, never won | +13–46 min, 0–4 | 64–67 of 70 | 10.5–12.0 / 11.3–12.6 % | 2.36 |
+| Liège-Bastogne-Liège | 37.7–38.8 km/h | puncheur 7, climber 1 | 0 s (215 s when the break won) | 2.6–6 min, km 209–222 of 257, won 1/8 | +32–54 min, 5–16 | 55–66 of 70 | 8.0–9.6 / 13.3–15.3 % | 16.81 |
+| Il Lombardia | 36.2–37.0 km/h | climber 4, all-rounder 2, puncheur 2 | 0–62 s | 3.9–5.1 min, km 208–209 of 238, won 2/8 | +30–51 min, 4–10 | 62–66 of 70 | 7.6–8.7 / 13.5–15.1 % | 25.78 |
 
-Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. The control teams let the break go at an easy tempo, then hold it in a band (one domestique) and catch it in the last 30–50 km; before this the break never got more than 10 s and dropped riders finished up to 115 min down. Open: LBL and Lombardia are now 1–3 km/h under the target range (the controlled middle of the race is slower than the old default rotation): to be fixed engine-side in the final calibration pass (§9 step 6). No abandons yet (v2), so the last riders still finish 30–60 min down where real ones would abandon.
+Everywhere: top speed 68–73 km/h (descents), best 20-min power ≤ 5.9 W/kg, best 60-min power ≤ 400 W (≤ 4.7 W/kg). Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. With the old `gapS` (distance ÷ speed) the same harness scored 47.58 (Sanremo 4.44, LBL 16.49, Lombardia 26.64). Open: LBL and Lombardia are 1–3 km/h under the target range; no abandons yet (v2), so the last riders still finish 30–50 min down where real ones would abandon.
+
+#### Score
+
+One number, lower is better (`runner/…/calibration/Score.kt`), to compare calibration approaches objectively. Each term is a metric with a target band [lo, hi] and a tolerance below / above; its penalty is
+
+```
+penalty = weight · min(9, (distance outside the band / tolerance)²)     (0 inside the band)
+race    = Σ race terms
+course  = mean of its races + Σ course terms (over the seeds)
+total   = Σ courses
+```
+
+| Term | Metric | Band | Tolerance | Weight |
+|------|--------|------|-----------|--------|
+| `speed` | winning average speed, km/h | Sanremo 40–44, LBL and Lombardia 39–42 | 1 | 3 |
+| `winner` | winner's archetype: 0 if it fits (Sanremo sprinter/puncheur, LBL puncheur, Lombardia climber), 0.5 if acceptable (Sanremo all-rounder/rouleur, LBL climber/all-rounder, Lombardia puncheur/all-rounder), else 1 | 0 | 1 | 2 |
+| `breakGap` | early break's max real time gap, s | 180–600 | 60 / 180 | 2 |
+| `caughtToGo` | km to go when the early break is caught (0 when it wins) | 5–60 | 20 | 2 |
+| `top10Gap` | largest gap inside the top 10, s | Sanremo 0–120, LBL and Lombardia 5–120 | 5 / 60 | 2 |
+| `pelotonAtHalf` | share of the riders on the road in the peloton when its head reaches half distance | ≥ 0.75 | 0.1 | 2 |
+| `lastFinisherMin` | last finisher's gap, min | ≤ 15 | 10 | 1 |
+| `over20min` | riders more than 20 min down | ≤ 2 | 4 | 1 |
+| `leaderCpLost` | mean CP lost by the leaders at the finish, % | 5–12 | 2 | 1 |
+| `domestiqueCpLost` | same for the domestiques, % | 10–20 | 3 | 1 |
+| `maxKmh` | top speed of any racing rider, km/h | ≤ 90 | 5 | 2 |
+| `max20WKg` | best 20-min mean power of any rider, W/kg | ≤ 6.8 | 0.3 | 1 |
+| `max60WKg` | best 60-min mean power, W/kg | ≤ 6.0 | 0.3 | 1 |
+| `max60W` | best 60-min mean power, W | ≤ 500 | 30 | 1 |
+| `breakWinShare` (course) | share of seeds won from the early break (winner in the break, not caught before the last km) | ≤ 0.2 | 0.15 | 2 |
+| `favouriteWinShare` (course) | share of seeds won by the favourite (best public course fit, `FinaleKind.fit`, of the field) | ≤ 0.5 | 0.25 | 1 |
+
+The cap keeps one broken metric from hiding all the others; the weights put the headline targets (speed, then the shape of the race and plausibility) first. A perfect race scores 0; one km/h under the speed band costs 3, the whole field together at Lombardia's line costs 2.
 
 ---
 

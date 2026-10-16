@@ -21,6 +21,7 @@ import ucai.engine.riders.RatingScale
 import ucai.engine.riders.RiderGenerator
 import ucai.kernel.decimatedDetail
 import ucai.kernel.raceSeed
+import ucai.team.strategy.Role
 import ucai.team.strategy.StrategyParams
 import ucai.team.strategy.TeamStrategy
 import java.io.File
@@ -101,7 +102,7 @@ object Calibration {
         val race = Race(course, entrants, secret?.let { raceSeed(seed, it) } ?: seed, config = config)
         val recorder = ReplayRecorder()
         race.addObserver(recorder)
-        val breakaway = RaceMetrics()
+        val breakaway = RaceMetrics { id -> field.rider(id)!!.profile.massKg }
         race.addObserver(breakaway)
         observer?.let { race.addObserver(it) }
         // What a bot gets from `GET /courses/{id}`: points decimated to one every 50 m.
@@ -179,7 +180,12 @@ object Calibration {
             "    break max gap ${runs.joinToString("/") { i(it.breakaway.maxGapS) }} s, caught at km " +
             "${runs.joinToString("/") { i(it.breakaway.caughtKm) }} of ${i(runs.first().course.distanceM / 1000)}; " +
             ">10 min ${runs.joinToString("/") { "${it.downBy(10)}" }}, >20 min ${runs.joinToString("/") { "${it.downBy(20)}" }}, " +
-            "last finisher +${runs.joinToString("/") { i(it.lastGapS) }} s, finish groups ${runs.joinToString("/") { "${finishGroups(it.race.results()).size}" }}\n"
+            "last finisher +${runs.joinToString("/") { i(it.lastGapS) }} s, finish groups ${runs.joinToString("/") { "${finishGroups(it.race.results()).size}" }}\n" +
+            "    break won ${runs.count { Score.breakWon(it) }}/${runs.size}, peloton at half ${runs.joinToString("/") { "${it.breakaway.pelotonAtHalf}" }}, " +
+            "CP lost leaders ${runs.joinToString("/") { f(Score.cpLostPct(it, Role.LEADER)) }} %, domestiques ${runs.joinToString("/") { f(Score.cpLostPct(it, Role.DOMESTIQUE)) }} %, " +
+            "max ${runs.joinToString("/") { i(it.breakaway.maxSpeed * 3.6) }} km/h, best 20 min ${runs.joinToString("/") { r -> f(r.breakaway.riderIds.maxOf { r.breakaway.best20WKg(it) }) }} W/kg, " +
+            "favourite won ${runs.count { Score.favouriteRank(it) == 1 }}/${runs.size}\n" +
+            Score.courseReport(runs)
     }
 
     fun report(r: Run): String {
@@ -248,6 +254,18 @@ object Calibration {
                 "km${"%.0f".format(Locale.ROOT, a.distM / 1000)} #${a.riderId} ${r.strategies.getValue(ar.teamId).roles.role(a.riderId).name.take(4).lowercase()}"
             },
         )
+        val m = r.breakaway
+        val best20 = m.riderIds.maxBy { m.best20WKg(it) }
+        val best60 = m.riderIds.maxBy { m.best60W(it) }
+        fun f1(x: Double) = "%.1f".format(Locale.ROOT, x)
+        sb.appendLine(
+            "  physics     max ${f1(m.maxSpeed * 3.6)} km/h at km ${"%.0f".format(Locale.ROOT, m.maxSpeedKm)}, best 20 min " +
+                "#$best20 ${"%.0f".format(Locale.ROOT, m.best20W(best20))} W ${f1(m.best20WKg(best20))} W/kg, best 60 min " +
+                "#$best60 ${"%.0f".format(Locale.ROOT, m.best60W(best60))} W ${f1(m.best60WKg(best60))} W/kg; " +
+                "peloton at half distance ${m.pelotonAtHalf} of ${m.onRoadAtHalf}; winner fit rank ${Score.favouriteRank(r)}" +
+                (if (Score.breakWon(r)) "; WON BY THE BREAK" else ""),
+        )
+        sb.appendLine("  " + Score.describe(Score.race(r), Score.raceTerms(r)))
         sb.appendLine(
             "  run         ${r.simMillis} ms, ${r.race.tick} ticks, ${r.decisions} decisions, ${r.ordersSent} orders, " +
                 "${r.rejected.size} rejected, ${r.replay.frames.size} frames",

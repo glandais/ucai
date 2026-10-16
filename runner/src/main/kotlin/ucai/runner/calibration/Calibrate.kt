@@ -17,6 +17,7 @@ fun main(args: Array<String>) {
 
     var failed = false
     val summary = StringBuilder("== Summary\n")
+    val scores = LinkedHashMap<String, Double>()
     for (id in courses) {
         val course = Calibration.loadCourse(coursesDir, id)
         val runs = mutableListOf<Calibration.Run>()
@@ -36,8 +37,14 @@ fun main(args: Array<String>) {
             runs += run
         }
         summary.append(Calibration.summary(runs))
+        scores[id] = Score.course(runs)
     }
     print(summary)
+    println(
+        "== Score (lower is better, DESIGN §8): " +
+            scores.entries.joinToString("  ") { "${it.key} %.2f".format(java.util.Locale.ROOT, it.value) } +
+            "  total %.2f".format(java.util.Locale.ROOT, scores.values.sum()),
+    )
     if (failed) error("some orders were rejected")
 }
 
