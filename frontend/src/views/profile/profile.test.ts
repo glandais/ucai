@@ -87,6 +87,19 @@ describe('scale', () => {
     expect(s.right).toBe(1040);
   });
 
+  it('maps a zoomed window [startM, totalM]', () => {
+    const s = new ProfileScale({ left: 40, top: 10, width: 1000, height: 100 }, 200_000, { min: 0, max: 500, step: 100 }, 150_000);
+    expect(s.spanM).toBe(50_000);
+    expect(s.x(150_000)).toBe(40);
+    expect(s.x(175_000)).toBe(540);
+    expect(s.x(100_000)).toBe(40);
+    expect(s.dist(540)).toBe(175_000);
+    expect(s.shows(149_000)).toBe(false);
+    expect(s.shows(200_000)).toBe(true);
+    // Columns of the window only.
+    expect(Array.from(profileColumns(hill, 3000, 2, 1000, 1000).ele)).toEqual([200, 200]);
+  });
+
   it('downsamples the course into columns keeping the summits', () => {
     const c = profileColumns(hill, 3000, 3, 1000);
     expect(Array.from(c.ele)).toEqual([100, 200, 200]);
@@ -162,6 +175,14 @@ describe('markers', () => {
   it('stacks groups that are too close to tell apart', () => {
     const snap = source.snapshotAt(20); // 200 m vs 160 m apart: 4 px
     expect(groupMarkers(meta, snap, scale).map((g) => g.lane)).toEqual([0, 1]);
+  });
+
+  it('leaves out groups behind a zoomed window and drops bubbles with no free lane', () => {
+    const zoomed = new ProfileScale({ left: 0, top: 0, width: 1000, height: 100 }, 10_000, { min: 0, max: 300, step: 100 }, 4_500);
+    const snap = source.snapshotAt(500); // A at 5 km, B at 4 km
+    expect(groupMarkers(meta, snap, zoomed).map((g) => g.groupId)).toEqual([1]);
+    const close = source.snapshotAt(20);
+    expect(groupMarkers(meta, close, scale, 1).map((g) => g.lane)).toEqual([0, -1]);
   });
 
   it('describes the hovered point', () => {
