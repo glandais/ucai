@@ -59,7 +59,13 @@ object Calibration {
         val decisions: Int,
         val ordersSent: Int,
         val simMillis: Long,
-    )
+        val breakaway: RaceMetrics,
+    ) {
+        /** Gaps (s) of the finishers behind the winner. */
+        val finishGaps: List<Double> get() = race.results().mapNotNull { it.gapS }
+        val lastGapS: Double get() = finishGaps.maxOrNull() ?: 0.0
+        fun downBy(minutes: Int) = finishGaps.count { it > minutes * 60.0 }
+    }
 
     fun run(course: Course, seed: Long, config: RaceConfig = RaceConfig(), observer: RaceObserver? = null): Run {
         val t0 = System.nanoTime()
@@ -68,6 +74,8 @@ object Calibration {
         val race = Race(course, entrants, seed, config = config)
         val recorder = ReplayRecorder()
         race.addObserver(recorder)
+        val breakaway = RaceMetrics()
+        race.addObserver(breakaway)
         observer?.let { race.addObserver(it) }
         val detailCourse = course.toDetail()
         val params = teamParams(seed, field.teamInfos.map { it.id })
@@ -100,7 +108,7 @@ object Calibration {
             tick = race.tick, seed = seed,
         )
         val replay = recorder.replay(detail, race)
-        return Run(course, seed, field, race, replay, strategies, rejected, decisions, sent, simMillis)
+        return Run(course, seed, field, race, replay, strategies, rejected, decisions, sent, simMillis, breakaway)
     }
 
     fun writeReplay(replay: Replay, file: File) {
@@ -136,12 +144,18 @@ object Calibration {
         val dnf = runs.sumOf { r -> r.race.results().count { it.position == null } }
         val winners = runs.map { r -> r.race.results().first().riderId }
         fun f(x: Double) = "%.1f".format(Locale.ROOT, x)
+        fun i(x: Double) = "%.0f".format(Locale.ROOT, x)
         return "  ${runs.first().course.id}: ${runs.size} seeds, avg ${f(speeds.min())}–${f(speeds.max())} km/h, " +
-            "winners [$archetypes], top-10 gap max ${top10.joinToString("/") { "%.0f".format(Locale.ROOT, it) }} s, " +
-            "winner ids $winners, not finished $dnf\n"
+            "winners [$archetypes], top-10 gap max ${top10.joinToString("/") { i(it) }} s, " +
+            "winner ids $winners, not finished $dnf\n" +
+            "    break max gap ${runs.joinToString("/") { i(it.breakaway.maxGapS) }} s, caught at km " +
+            "${runs.joinToString("/") { i(it.breakaway.caughtKm) }} of ${i(runs.first().course.distanceM / 1000)}; " +
+            ">10 min ${runs.joinToString("/") { "${it.downBy(10)}" }}, >20 min ${runs.joinToString("/") { "${it.downBy(20)}" }}, " +
+            "last finisher +${runs.joinToString("/") { i(it.lastGapS) }} s, finish groups ${runs.joinToString("/") { "${finishGroups(it.race.results()).size}" }}\n"
     }
 
     fun report(r: Run): String {
+        fun cpLeft(id: Int) = r.race.riders.first { it.id == id }.cpEff / r.field.rider(id)!!.profile.cp * 100
         val results = r.race.results()
         val winner = results.first()
         val w = r.field.rider(winner.riderId)!!
@@ -160,6 +174,24 @@ object Calibration {
         val dnf = results.count { it.position == null }
         if (dnf > 0) sb.appendLine("  NOT FINISHED $dnf riders (stalled, max ticks ${r.race.config.maxTicks})")
         sb.appendLine("  groups      ${groups.size} at the finish, sizes ${groups.map { it.size }}")
+        val b = r.breakaway.earlyBreak
+        sb.appendLine(
+            "  break       " + (b?.let {
+                "from km ${"%.0f".format(Locale.ROOT, it.startKm)}, max gap ${"%.0f".format(Locale.ROOT, it.maxGapS)} s at km " +
+                    "${"%.0f".format(Locale.ROOT, it.maxGapKm)}, caught at km ${"%.0f".format(Locale.ROOT, r.breakaway.caughtKm)}"
+            } ?: "none"),
+        )
+        sb.appendLine(
+            "  time cut    >10 min ${r.downBy(10)}, >20 min ${r.downBy(20)}, >30 min ${r.downBy(30)}, " +
+                "last finisher +${"%.0f".format(Locale.ROOT, r.lastGapS)} s",
+        )
+        val late = results.filter { (it.gapS ?: 0.0) > 20 * 60.0 }
+        if (late.isNotEmpty()) sb.appendLine(
+            "  >20 min     " + late.joinToString("  ") { e ->
+                val role = r.strategies.getValue(e.teamId).roles.role(e.riderId).name.take(4).lowercase()
+                "#${e.riderId} $role left km${"%.0f".format(Locale.ROOT, r.breakaway.leftPelotonKm[e.riderId] ?: 0.0)} +${"%.0f".format(Locale.ROOT, (e.gapS ?: 0.0) / 60)}' cp${"%.0f".format(Locale.ROOT, cpLeft(e.riderId))}%"
+            },
+        )
         sb.appendLine(
             "  top 10      " + results.take(10).joinToString("  ") { e ->
                 val a = r.field.rider(e.riderId)!!.archetype.name.take(3).lowercase()

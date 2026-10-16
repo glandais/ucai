@@ -9,7 +9,11 @@ import java.util.Locale
  * Calibration aid: one line every [stepM] of the head of the race — race time, head speed over the step, the first
  * groups (size and gap), and the front rider of the biggest group (mode, power, CP fraction). `--trace` in [main].
  */
-class Trace(private val stepM: Double = 10_000.0, private val cp: (Int) -> Double) : RaceObserver {
+class Trace(
+    private val stepM: Double = 10_000.0,
+    private val watch: Set<Int> = emptySet(),
+    private val cp: (Int) -> Double,
+) : RaceObserver {
     private val sb = StringBuilder()
     private var nextM = stepM
     private var lastT = 0.0
@@ -54,6 +58,16 @@ class Trace(private val stepM: Double = 10_000.0, private val cp: (Int) -> Doubl
                 Locale.ROOT, head.distM / 1000, fmt(t), kmh, groups, fr,
             ),
         )
+        for (id in watch) {
+            val r = byId[id] ?: continue
+            val g = race.groups.firstOrNull { id in it.riderIds }
+            sb.appendLine(
+                "      #$id km%.1f %s %s %.0fW cpEff %.2f w %.2f group of %d".format(
+                    Locale.ROOT, r.distM / 1000, r.status.name.lowercase(), r.mode.name.lowercase(), r.power,
+                    r.cpEff / cp(id), r.wPrimeBal / r.wPrimeEff.coerceAtLeast(1.0), g?.size ?: 0,
+                ),
+            )
+        }
     }
 
     private fun fmt(s: Double) = "%d:%02d".format(Locale.ROOT, (s / 3600).toInt(), ((s % 3600) / 60).toInt())

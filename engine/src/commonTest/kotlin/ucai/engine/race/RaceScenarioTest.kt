@@ -163,7 +163,15 @@ class RaceScenarioTest {
         val i = log.frames.indexOfFirst { it.dist.getValue(1) >= course.distanceM }
         val before = log.frames[i - 1]
         val at = log.frames[i]
-        val expected = before.tick + (course.distanceM - before.dist.getValue(1)) / at.speed.getValue(1)
+        // A finished rider stands at the line (speed 0): read the crossing tick's speed from the same ride on a
+        // longer course (flat, so the same ticks until then).
+        val longer = Race(Fixtures.course(2_000.0), listOf(RaceEntrant(1, "A", Fixtures.ROULEUR)), seed = 1)
+        val longLog = TickLog().also { longer.addObserver(it) }
+        runScripted(longer)
+        val v = longLog.frames.first { it.tick == at.tick }.speed.getValue(1)
+        assertEquals(0.0, at.speed.getValue(1), "standing at the line once finished")
+        assertEquals(0, at.group.getValue(1), "out of every group once finished")
+        val expected = before.tick + (course.distanceM - before.dist.getValue(1)) / v
         val r = race.results().single()
         assertEquals(1, r.position)
         assertTrue(abs(r.timeS!! - expected) < 1e-9, "${r.timeS} vs $expected")

@@ -48,16 +48,40 @@ object Tactics {
     /** Break riders' turns, and in the last 30 km (the peloton's chase must be faster: it shares the work). */
     const val BREAK_PULL = 0.95
     const val BREAK_PULL_LATE = 1.0
+    const val BREAK_PULL_SPENT = 0.9
+    /** A break rider ahead of another break group less than [BREAK_WAIT_S] behind eases to [BREAK_WAIT] so they join. */
+    const val BREAK_WAIT_S = 60.0
+    const val BREAK_WAIT = 0.75
 
     /** Control: target gap (s) = [CONTROL_S_PER_KM] × km to go, clamped; chase until back under [CONTROL_RELEASE] × target. */
-    const val CONTROL_S_PER_KM = 1.6
+    const val CONTROL_S_PER_KM = 1.3
     const val CONTROL_MIN_GAP_S = 20.0
     const val CONTROL_MAX_GAP_S = 240.0
     const val CONTROL_RELEASE = 0.6
-    /** Tempo while the break builds its lead; chase above the target gap (by km to go: > 100, > 40, less). */
-    const val CONTROL_TEMPO = 0.95
+    /** In the last [CONTROL_CATCH_KM] km the controlling teams chase whenever a break is ahead: they want it back. */
+    const val CONTROL_CATCH_KM = 30.0
+    /**
+     * Tempo while the break builds its lead (below the break's [BREAK_PULL], so it gets minutes); [CONTROL_HOLD] by one
+     * domestique once it is established and the gap is in the band, else the peloton falls back to the faster
+     * default rotation and chases it down; chase above the target gap (by km to go: > 100, > 40, less).
+     */
+    const val CONTROL_TEMPO = 0.85
+    const val CONTROL_HOLD = 0.92
+    /**
+     * In the band, the hold pull follows the gap: [CONTROL_HOLD] at [CONTROL_HOLD_AT] × target, [CONTROL_HOLD_GAIN]
+     * more per target of gap above, within [CONTROL_HOLD_MIN]..[CONTROL_HOLD_MAX]; so the gap stays in the band.
+     */
+    const val CONTROL_HOLD_AT = 0.8
+    const val CONTROL_HOLD_GAIN = 0.5
+    const val CONTROL_HOLD_MIN = 0.82
+    const val CONTROL_HOLD_MAX = 1.05
+    /**
+     * Before the finale, control pulls on a climb are capped at this (no [CLIMB_BONUS]): in the draft on the flat
+     * anyone holds a 1.05 pull, on a climb a weaker domestique would be dropped.
+     */
+    const val CONTROL_CLIMB_CAP = 0.95
     const val CONTROL_CHASE_EARLY = 1.05
-    const val CONTROL_CHASE_MID = 1.15
+    const val CONTROL_CHASE_MID = 1.1
     const val CONTROL_CHASE_LATE = 1.2
     /** Teams that control when [StrategyParams.control] is null: those whose leader looks strongest. */
     const val CONTROL_TEAMS = 3
@@ -104,14 +128,24 @@ object Tactics {
     /** Spent: cpEff below this fraction of CP, or W′bal below this fraction of wPrimeEff. */
     const val SPENT_CP = 0.85
     const val SPENT_W = 0.15
+    /** Domestiques still work (control, climbs) down to this cpEff fraction of CP, below [SPENT_CP]: it's their job. */
+    const val WORKER_MIN_CP = 0.75
     /**
-     * A spent rider dropped behind the peloton, this far behind it or in a group of 3 or less, rides home at this
-     * pace (sitting in the peloton, it `recover`s).
+     * A spent rider dropped behind the peloton, this far behind it or in a group of 3 or less, is out of the race:
+     * he waits (`follow` at [GRUPPETTO_WAIT]) while another group is less than [GRUPPETTO_BEHIND_S] behind, so the
+     * stragglers ride home together; with nobody behind he rides home in `pull` at [GRUPPETTO_PULL]. Sitting in the
+     * peloton, he `recover`s.
      */
     const val GRUPPETTO_GAP_S = 120.0
-    const val GRUPPETTO_PULL = 0.8
+    const val GRUPPETTO_BEHIND_S = 120.0
+    const val GRUPPETTO_WAIT = 1.0
+    const val GRUPPETTO_PULL = 1.0
 
-    /** Pulls (break, control, chase) get [CLIMB_BONUS] more intensity where the next [GRADE_AHEAD_M] climb ≥ [CLIMB_GRADE]. */
+    /**
+     * Pulls (break, chase; control only in the last [FINALE_WINDOW_M]) get [CLIMB_BONUS] more intensity where the next
+     * [GRADE_AHEAD_M] climb ≥ [CLIMB_GRADE]. Early control rides climbs at its flat tempo, or domestiques are
+     * dropped on the first climb.
+     */
     const val CLIMB_GRADE = 0.03
     const val CLIMB_BONUS = 0.1
     const val GRADE_AHEAD_M = 500.0
@@ -119,6 +153,8 @@ object Tactics {
     /** `follow` cap (fraction of cpEff) to stay in the group: above 1, a rider digs into W′ to hang on. */
     const val SIT_IN_MAX_PROTECTED = 1.3
     const val SIT_IN_MAX_DOMESTIQUE = 1.1
+    /** A domestique who lost too much CP (spent) but still has W′: he hangs on up to this, and `recover`s when W′ is low. */
+    const val SIT_IN_MAX_SPENT = 1.0
 }
 
 /**
@@ -136,12 +172,14 @@ object Tactics {
  * 5. domestiques pull at the foot of the finale climbs;
  * 6. chase when the leader is behind in the finale (all out in the last 8 km), or ride the move when the leader is
  *    in a small front group;
- * 7. control the break (strongest teams): tempo while it goes, then chase above a target gap shrinking towards the
- *    finish;
- * 8. spent domestiques `recover` (or ride home in `pull` once dropped behind the peloton); everyone else `follow`
- *    with a `maxIntensity` above 1 so they dig into W′ to stay in the group.
+ * 7. control the break (strongest teams): easy tempo while it goes, then one domestique holds the gap in a band
+ *    under a target shrinking towards the finish, chasing above it (and always in the last 30 km);
+ * 8. spent domestiques hang on in the wheels (`recover` when W′ is low); once dropped behind the peloton they wait
+ *    for the stragglers behind and ride home together; everyone else `follow`s with a `maxIntensity` above 1 so
+ *    they dig into W′ to stay in the group.
  *
- * Pulls on climbs get [Tactics.CLIMB_BONUS] more intensity, like the engine's default rotation.
+ * Pulls on climbs get [Tactics.CLIMB_BONUS] more intensity, like the engine's default rotation, but only in the finale
+ * for the break and the control: early climbs are ridden at tempo.
  */
 class TeamStrategy(
     val teamId: String,
@@ -206,13 +244,22 @@ class TeamStrategy(
             val role = roles.role(s.riderId)
             val spentRole = role == Role.DOMESTIQUE || role == Role.LIEUTENANT
             if (spentRole && v.spent(s.riderId)) {
-                // Spent: sit in and accept being dropped; once out of the race, ride home at a steady pace.
+                // Spent: sit in and accept being dropped; once out of the race, ride home with the stragglers.
                 val g = v.group(s.riderId)
                 val pel = v.peloton
                 val behindPeloton = g != null && pel != null && g.id != pel.id && g.headDistM < pel.headDistM
                 val outOfRace = g == null ||
                     (behindPeloton && (g.gapS - pel!!.gapS > Tactics.GRUPPETTO_GAP_S || g.size <= 3))
-                assign(s.riderId, if (outOfRace) pull(s.riderId, Tactics.GRUPPETTO_PULL) else Order(s.riderId, RiderMode.RECOVER))
+                val order = when {
+                    // Tired legs (CP lost) but W′ left: hang on in the wheels, just don't work.
+                    !outOfRace && v.w(s.riderId) >= Tactics.SPENT_W ->
+                        Order(s.riderId, RiderMode.FOLLOW, maxIntensity = Tactics.SIT_IN_MAX_SPENT)
+                    !outOfRace -> Order(s.riderId, RiderMode.RECOVER)
+                    v.groupBehindWithin(g, Tactics.GRUPPETTO_BEHIND_S) ->
+                        Order(s.riderId, RiderMode.FOLLOW, maxIntensity = Tactics.GRUPPETTO_WAIT)
+                    else -> pull(s.riderId, Tactics.GRUPPETTO_PULL)
+                }
+                assign(s.riderId, order)
             }
             val sitIn = if (role == Role.DOMESTIQUE) Tactics.SIT_IN_MAX_DOMESTIQUE else Tactics.SIT_IN_MAX_PROTECTED
             assign(s.riderId, Order(s.riderId, RiderMode.FOLLOW, maxIntensity = sitIn))
@@ -245,6 +292,12 @@ class TeamStrategy(
         fun teammatesIn(groupId: Int, except: Set<Int>) =
             mine.filter { it.status == RiderStatus.RACING && it.groupId == groupId && it.riderId !in except }
         val pelotonIsHead get() = peloton != null && peloton.id == head?.id
+
+        /** Another group less than [s] behind [g] (false without a group). */
+        fun groupBehindWithin(g: GroupSummary?, s: Double): Boolean {
+            val gap = g?.gapS ?: return false
+            return groups.any { it.id != g.id && it.headDistM < g.headDistM && it.gapS - gap < s }
+        }
 
         /** The rider the team rides for now: the leader, else the lieutenant, else the sprinter, else anyone. */
         val leaderId: Int? = listOfNotNull(roles.leader.id, roles.lieutenant?.id, roles.sprinter.id)
@@ -344,8 +397,22 @@ class TeamStrategy(
         val ahead = g.id != pel.id && g.headDistM > pel.headDistM
         val d = v.state(b).distM
         when {
-            ahead && !v.spent(b) ->
-                assign(b, pull(b, terrain(if (v.toGo(b) < 30_000.0) Tactics.BREAK_PULL_LATE else Tactics.BREAK_PULL, d)))
+            ahead -> {
+                // Early on, wait for the other break riders behind (between us and the peloton): one break, not solos.
+                val joining = v.toGo(b) > Tactics.FINALE_WINDOW_M && v.groups.any {
+                    it.id != g.id && it.headDistM < g.headDistM && it.headDistM > pel.headDistM && it.gapS - g.gapS < Tactics.BREAK_WAIT_S
+                }
+                val intensity = when {
+                    joining -> Tactics.BREAK_WAIT
+                    // Cooked, he still takes his turns (a break of `follow` riders would ride the faster default rotation).
+                    v.spent(b) -> Tactics.BREAK_PULL_SPENT
+                    v.toGo(b) < 30_000.0 -> Tactics.BREAK_PULL_LATE
+                    else -> Tactics.BREAK_PULL
+                }
+                // No climbing bonus before the finale: the peloton's control doesn't take one either.
+                val finale = v.toGo(b) <= Tactics.FINALE_WINDOW_M
+                assign(b, pull(b, if (finale) terrain(intensity, d) else intensity))
+            }
             g.id == pel.id && d in breakFromM..Tactics.BREAK_WINDOW_END_M &&
                 breakAttempts < Tactics.BREAK_ATTEMPTS && v.tick - breakLastTick > 300 -> {
                 breakAttempts++
@@ -356,11 +423,11 @@ class TeamStrategy(
         }
     }
 
-    /** Fresh domestiques in [groupId], current pullers first, then by least work done. */
+    /** Fresh domestiques in [groupId], current pullers first, then the strongest now (cpEff). */
     private fun workers(v: View, groupId: Int, busy: Set<Int>, minW: Double): List<Int> =
         v.teammatesIn(groupId, busy).map { it.riderId }
-            .filter { roles.role(it) == Role.DOMESTIQUE && !v.spent(it) && v.w(it) >= minW }
-            .sortedWith(compareBy<Int> { if (it in pullers) 0 else 1 }.thenBy { v.state(it).energyKj })
+            .filter { roles.role(it) == Role.DOMESTIQUE && v.cpFrac(it) >= Tactics.WORKER_MIN_CP && v.w(it) >= minW }
+            .sortedWith(compareBy<Int> { if (it in pullers) 0 else 1 }.thenByDescending { v.state(it).cpEff })
 
     /** 5. Domestiques set the pace at the foot of the finale climbs. */
     private fun climbWork(v: View, busy: Set<Int>, assign: (Int, Order) -> Unit) {
@@ -406,9 +473,11 @@ class TeamStrategy(
 
     /**
      * 7. Control the break. While the break goes and builds its lead (until the gap first reaches a target that
-     * shrinks towards the finish, or the end of the break window), the strongest teams ride tempo at the front: a peloton without pullers rides the
-     * faster default rotation and would never let a break go. Once the break is established they only chase when the
-     * gap is above the target, until it is back under [Tactics.CONTROL_RELEASE] × target.
+     * shrinks towards the finish, or the end of the break window), the strongest teams ride an easy tempo at the
+     * front: a peloton without pullers rides the faster default rotation and would never let a break go. Once the
+     * break is established, one domestique holds the gap in the band (his pull follows the gap, see
+     * [Tactics.CONTROL_HOLD]); above the target they chase until it is back under [Tactics.CONTROL_RELEASE] × target,
+     * and in the last [Tactics.CONTROL_CATCH_KM] km whenever a break is ahead.
      */
     private fun control(v: View, busy: Set<Int>, assign: (Int, Order) -> Unit) {
         if (!controls) return
@@ -423,9 +492,9 @@ class TeamStrategy(
         val kmToGo = (finishM - pel.headDistM) / 1000.0
         val target = (Tactics.CONTROL_S_PER_KM * kmToGo).coerceIn(Tactics.CONTROL_MIN_GAP_S, Tactics.CONTROL_MAX_GAP_S)
         val gap = if (breakAhead) pel.gapS else 0.0
-        if (gap > target) controlling = true
+        if (gap > target || (breakAhead && kmToGo < Tactics.CONTROL_CATCH_KM)) controlling = true
         if (gap > target || pel.headDistM > Tactics.BREAK_WINDOW_END_M) breakEstablished = true
-        if (gap < Tactics.CONTROL_RELEASE * target) controlling = false
+        if (gap < Tactics.CONTROL_RELEASE * target && kmToGo >= Tactics.CONTROL_CATCH_KM) controlling = false
         val (n, intensity) = when {
             controlling -> (if (gap > 1.5 * target || kmToGo < 30.0) 3 else 2) to when {
                 kmToGo > 100.0 -> Tactics.CONTROL_CHASE_EARLY
@@ -433,12 +502,15 @@ class TeamStrategy(
                 else -> Tactics.CONTROL_CHASE_LATE
             }
             !breakEstablished -> 1 to Tactics.CONTROL_TEMPO
-            else -> return
+            else -> 1 to (Tactics.CONTROL_HOLD + Tactics.CONTROL_HOLD_GAIN * (gap / target - Tactics.CONTROL_HOLD_AT))
+                .coerceIn(Tactics.CONTROL_HOLD_MIN, Tactics.CONTROL_HOLD_MAX)
         }
         val d = pel.headDistM
+        val finale = finishM - d <= Tactics.FINALE_WINDOW_M
         for (w in workers(v, pel.id, busy + leader + roles.sprinter.id, 0.2).take(n)) {
             pullers += w
-            assign(w, pull(w, terrain(intensity, d)))
+            val climbing = gradeAhead(d) >= Tactics.CLIMB_GRADE
+            assign(w, pull(w, if (finale) terrain(intensity, d) else if (climbing) min(intensity, Tactics.CONTROL_CLIMB_CAP) else intensity))
         }
     }
 

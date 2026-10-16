@@ -7,7 +7,7 @@ import java.io.File
  * Calibration entry point: `./gradlew :runner:calibrate --args="--courses milano-sanremo --seeds 1,2,3"`.
  *
  * Options: `--courses a,b,c` (default: the 3 monuments), `--seeds 1,2,3` or `--seeds 1..5` (default 1..3),
- * `--courses-dir races/courses`, `--out replays/`, `--trace true` (a line every `--trace-step` m, default 10 000).
+ * `--courses-dir races/courses`, `--out replays/`, `--trace true` (a line every `--trace-step` m, default 10 000; `--watch 12,34` adds those riders' state).
  */
 fun main(args: Array<String>) {
     val opts = args.toList().chunked(2).associate { (k, v) -> k.removePrefix("--") to v }
@@ -24,7 +24,8 @@ fun main(args: Array<String>) {
         for (seed in seeds) {
             val trace = if (opts["trace"] == "true") {
                 val field = Field.generate(seed)
-                Trace((opts["trace-step"] ?: "10000").toDouble()) { rider -> field.rider(rider)!!.profile.cp }
+                val watch = opts["watch"]?.split(',')?.map { it.trim().toInt() }?.toSet().orEmpty()
+                Trace((opts["trace-step"] ?: "10000").toDouble(), watch) { rider -> field.rider(rider)!!.profile.cp }
             } else null
             val run = Calibration.run(course, seed, observer = trace)
             val file = File(out, "$id-$seed.json.gz")

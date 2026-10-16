@@ -46,7 +46,8 @@ class GroupLogicTest {
         assertTrue(splits[0].gapS > 3.0)
         assertTrue(race.eventsOf<RaceEvent.GroupMerge>().isEmpty())
         assertEquals(listOf(99), race.eventsOf<RaceEvent.RiderDropped>().map { it.riderId })
-        val groupChanges = log.frames.zipWithNext().count { (a, b) -> a.group[99] != b.group[99] }
+        // Group changes on the road (the finish sets groupId 0).
+        val groupChanges = log.frames.zipWithNext().count { (a, b) -> b.group[99] != 0 && a.group[99] != b.group[99] }
         assertEquals(1, groupChanges)
         // Dropped on the climb, and the split fired only after 3 ticks above 3 s.
         assertTrue(splits[0].tick * 1.0 in 0.0..log.frames.size.toDouble())

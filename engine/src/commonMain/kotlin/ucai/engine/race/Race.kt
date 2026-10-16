@@ -75,6 +75,8 @@ class Race(
     private val pendingReasons = mutableSetOf<DecisionReason>()
     private var lastDecisionTick = 0
     private var decisionCounter = -1
+    /** Last lockstep decision whose orders were applied (each decision is applied once). */
+    private var appliedDecisionId = -1
 
     /** The decision point the race is paused at; null before [start] and once finished. */
     var currentDecision: DecisionPoint? = null
@@ -217,8 +219,15 @@ class Race(
     /**
      * Applies every team's orders for a decision, in canonical order: teams by `teamId`, then orders by `riderId`;
      * for the same rider the last valid order sent wins. The iteration order of [ordersByTeam] never matters.
+     * In lockstep, a decision is applied at most once: a later call for the same decision only validates its orders
+     * (no order applied, no event emitted), so a duplicate body is idempotent.
      */
     fun applyOrders(decisionId: Int?, ordersByTeam: Map<String, List<Order>>, lockstep: Boolean = true): Map<String, OrderResult> {
+        // DESIGN §4: a decision's orders are applied together, once; a duplicate call is idempotent (validated only).
+        val duplicate = lockstep && decisionId != null && decisionId == currentDecision?.decisionId &&
+            decisionId == appliedDecisionId
+        if (duplicate) return ordersByTeam.keys.sorted().associateWith { validateOrders(it, decisionId, ordersByTeam.getValue(it), lockstep) }
+        if (lockstep && decisionId != null && decisionId == currentDecision?.decisionId) appliedDecisionId = decisionId
         val results = LinkedHashMap<String, OrderResult>()
         for (teamId in ordersByTeam.keys.sorted()) {
             val orders = ordersByTeam.getValue(teamId)
@@ -660,6 +669,11 @@ class Race(
             r.attached = false
             r.group.members.remove(r)
             r.group.queue.remove(r)
+            // Standing at the line, out of every group (FrameRider / SnapshotRider sentinel: groupId 0).
+            r.speed = 0.0
+            r.newSpeed = 0.0
+            r.groupId = ucai.api.FrameRider.FINISHED_GROUP
+            r.rankInGroup = r.position!!
             emit(RaceEvent.RiderFinished(tick, r.id, r.position!!, time))
         }
     }

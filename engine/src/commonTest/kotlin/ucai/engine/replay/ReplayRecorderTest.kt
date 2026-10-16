@@ -3,6 +3,7 @@ package ucai.engine.replay
 import ucai.api.ApiJson
 import ucai.api.ClockConfig
 import ucai.api.ClockMode
+import ucai.api.FrameRider
 import ucai.api.Order
 import ucai.api.PublicRider
 import ucai.api.RaceDetail
@@ -70,6 +71,37 @@ class ReplayRecorderTest {
         // Coarse most of the time: far fewer frames than ticks.
         assertTrue(ticks.size < race.tick / 2, "${ticks.size} frames for ${race.tick} ticks")
         assertTrue((attack.tick + 1..attack.tick + 60).all { it in ticks })
+    }
+
+    @Test
+    fun coarseFramesAfterTheWinnerWhileTheRoadIsFarFromTheLine() {
+        val solo = 100
+        val course = Fixtures.course(25_000.0)
+        val riders = Fixtures.riders(6, Fixtures.WEAK, perTeam = 6) + RaceEntrant(solo, "A", Fixtures.STRONG)
+        val race = Race(course, riders, seed = 5)
+        val rec = ReplayRecorder()
+        race.addObserver(rec)
+        runScripted(race) { dp, _ ->
+            if (dp.decisionId == 0) {
+                mapOf("A" to listOf(Order(solo, RiderMode.PULL, intensity = 1.0)), "T0" to riders.filter { it.teamId == "T0" }.map { Order(it.id, RiderMode.RECOVER) })
+            } else emptyMap()
+        }
+        val winTick = race.events.filterIsInstance<RaceEvent.RiderFinished>().first { it.position == 1 }.tick
+        val frames = rec.frames
+        // Finished riders: standing at the line, out of every group.
+        val last = frames.last().r
+        race.riders.forEachIndexed { i, r ->
+            if (r.finishTimeS != null) {
+                assertEquals(FrameRider.FINISHED_GROUP, last[i].groupId)
+                assertEquals(0.0, last[i].speed)
+            }
+        }
+        val after = frames.zipWithNext().filter { (a, b) ->
+            a.t > winTick && b != frames.last() &&
+                b.r.filter { it.groupId != FrameRider.FINISHED_GROUP }.maxOf { it.distM } < course.distanceM - 3_000.0
+        }
+        assertTrue(after.size > 10, "the winner finishes well ahead (${after.size} frames)")
+        for ((a, b) in after) assertEquals(5, b.t - a.t, "5 s step at ${b.t}")
     }
 
     @Test

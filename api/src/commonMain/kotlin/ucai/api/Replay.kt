@@ -22,9 +22,17 @@ data class Replay(
 @Serializable
 data class ReplayFrame(val t: Int, val r: List<FrameRider>)
 
-/** Serialized compactly as `[distM, speed, groupId, rankInGroup]`. */
+/**
+ * Serialized compactly as `[distM, speed, groupId, rankInGroup]`. A finished rider stands at the line:
+ * `speed` 0, `groupId` [FINISHED_GROUP] (no group) and `rankInGroup` = finishing position.
+ */
 @Serializable(with = FrameRiderSerializer::class)
-data class FrameRider(val distM: Double, val speed: Double, val groupId: Int, val rankInGroup: Int)
+data class FrameRider(val distM: Double, val speed: Double, val groupId: Int, val rankInGroup: Int) {
+    companion object {
+        /** `groupId` of a rider who has finished (group ids start at 1). */
+        const val FINISHED_GROUP = 0
+    }
+}
 
 object FrameRiderSerializer : CompactArraySerializer<FrameRider>("ucai.api.FrameRider", 4) {
     override fun Writer.write(value: FrameRider) {

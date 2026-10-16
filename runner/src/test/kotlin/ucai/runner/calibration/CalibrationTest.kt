@@ -40,6 +40,28 @@ class CalibrationTest {
         assertEquals(a, b)
     }
 
+    /**
+     * The early break gets minutes and is caught late; dropped riders ride home together, not an hour down (DESIGN §8).
+     * No formal time cut in the engine (no abandons yet): the bound catches stragglers riding home alone.
+     */
+    @Test
+    fun breakawayAndTimeCut() {
+        val failures = mutableListOf<String>()
+        for (id in listOf("milano-sanremo", "liege-bastogne-liege", "il-lombardia")) {
+            val c = Calibration.loadCourse(File("races/courses"), id)
+            for (seed in 1L..3L) {
+                val run = Calibration.run(c, seed)
+                val b = run.breakaway
+                val tag = "$id-$seed"
+                if (b.maxGapS < 120.0) failures += "$tag: break max gap ${b.maxGapS} s"
+                if (b.caughtKm < 0.7 * c.distanceM / 1000.0) failures += "$tag: break caught at km ${b.caughtKm}"
+                if (run.lastGapS > 60 * 60.0) failures += "$tag: last finisher +${run.lastGapS} s"
+                if (run.downBy(20) > 14) failures += "$tag: ${run.downBy(20)} riders more than 20 min down"
+            }
+        }
+        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
+    }
+
     @Test
     fun finishGroupsByGroupTime() {
         val results = Calibration.run(course, 3).race.results()

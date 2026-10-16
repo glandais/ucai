@@ -10,6 +10,7 @@ import ucai.api.RaceState
 import ucai.api.Replay
 import ucai.api.ReplayFormat
 import ucai.api.ReplayFrame
+import ucai.api.RiderStatus
 import ucai.engine.race.Race
 import ucai.engine.race.RaceObserver
 import ucai.engine.race.RaceView
@@ -21,7 +22,7 @@ import kotlin.math.round
  * before [Race.start]; once the race is finished, [replay] builds the [Replay].
  *
  * Adaptive frame step: a frame at tick 0, then every [stepS] s of race time (ticks on a multiple of the step),
- * every [fineStepS] s while the head of the race is within [fineLastM] of the finish or for [fineAfterAttackS] s
+ * every [fineStepS] s while the head of the race (riders still racing) is within [fineLastM] of the finish or for [fineAfterAttackS] s
  * after an attack, and always the last tick of the race. Rider arrays follow the race's start-list order.
  *
  * Distances are rounded to 0.1 m and speeds to 0.01 m/s to keep the file small.
@@ -59,8 +60,9 @@ class ReplayRecorder(
 
         val t = race.tick
         if (t == lastTick) return
-        val head = race.riders.maxOf { it.distM }
-        val fine = race.course.distanceM - head <= fineLastM || t <= fineUntilTick
+        // Head of the race still on the road: finished riders stand at the line and do not count.
+        val head = race.riders.filter { it.status == RiderStatus.RACING }.maxOfOrNull { it.distM }
+        val fine = (head != null && race.course.distanceM - head <= fineLastM) || t <= fineUntilTick
         val step = if (fine) fineStepS else stepS
         val last = race.state == RaceState.FINISHED
         if (t == 0 || last || t % step == 0) {

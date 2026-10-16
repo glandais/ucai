@@ -294,7 +294,7 @@ A bot can make all its decisions from the `decision` event alone, with no extra 
   "events": [ ... ], "results": [ ... ] }
 ```
 
-Adaptive frame step: one frame every **5 s** of race time, every **1 s** in the last 3 km and for 60 s after an attack. The frontend interpolates `distM` linearly between frames; `groupId` and `rankInGroup` change as steps.
+Adaptive frame step: one frame every **5 s** of race time, every **1 s** while the head of the riders still racing is in the last 3 km and for 60 s after an attack. The frontend interpolates `distM` linearly between frames; `groupId` and `rankInGroup` change as steps. A finished rider stands at the line: `speed` 0, `groupId` 0 (no group), `rankInGroup` = finishing position.
 
 ---
 
@@ -367,13 +367,13 @@ Later: camera following a group, higher playback speeds, clickable events.
 
 `./gradlew :runner:calibrate --args="--seeds 1..8"` prints one report per race and a summary per course (`--trace true` adds a line every 10 km). The tuned numbers live in `ucai.engine.physics.Tuning` (engine) and `ucai.team.strategy.Tactics` (strategy).
 
-| Course | Winning avg speed | Winners | Largest gap in the top 10 |
-|--------|-------------------|---------|---------------------------|
-| Milano-Sanremo | 42.3–42.6 km/h (was 36.8–37.3) | sprinter 5, puncheur 3 (was puncheur or the early break) | 0–1 s, a reduced bunch of 15–30 (was up to 11 min) |
-| Liège-Bastogne-Liège | 40.4–40.8 km/h (was 33.1–34.2) | puncheur 5, climber 2, all-rounder 1 | 0–49 s (was 1–3 min) |
-| Il Lombardia | 39.2–39.6 km/h (was 31.5–32.5) | climber 7, all-rounder 1 (was all-rounders) | 30–146 s |
+| Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min |
+|--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|
+| Milano-Sanremo | 40.6–41.7 km/h | sprinter 7, puncheur 1 | 0 s, a bunch sprint | 3–4 min, km 257–270 of 297 | +23–44 min, 1–9 |
+| Liège-Bastogne-Liège | 37.7–38.9 km/h | puncheur 5, climber 2, all-rounder 1 | 0–32 s | 2.5–4 min, km 209–221 of 257 (once it won) | +36–53 min, 7–16 |
+| Il Lombardia | 36.2–37.0 km/h | climber 6, all-rounder 1, puncheur 1 | 0–101 s | 3–5.5 min, km 208–221 of 238 (once it won) | +27–59 min, 4–10 |
 
-Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. Riders do 4800–6100 kJ; at the finish leaders have lost 8–12 % of CP, domestiques 12–16 % on average.
+Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. The control teams let the break go at an easy tempo, then hold it in a band (one domestique) and catch it in the last 30–50 km; before this the break never got more than 10 s and dropped riders finished up to 115 min down. Open: LBL and Lombardia are now 1–3 km/h under the target range (the controlled middle of the race is slower than the old default rotation): to be fixed engine-side in the final calibration pass (§9 step 6). No abandons yet (v2), so the last riders still finish 30–60 min down where real ones would abandon.
 
 ---
 

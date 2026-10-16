@@ -66,6 +66,24 @@ class OrdersTest {
         assertEquals(RiderMode.RECOVER, race.rider(1).mode)
     }
 
+    @Test
+    fun aDecisionIsAppliedOnce() {
+        val race = race()
+        val dp = race.start()
+        val attack = mapOf("A" to listOf(Order(1, RiderMode.ATTACK, durationS = 20)))
+        race.applyOrders(dp.decisionId, attack)
+        repeat(3) { race.step() }
+        val res = race.applyOrders(dp.decisionId, attack)
+        assertEquals(1, res.getValue("A").accepted.size, "a duplicate is still validated")
+        race.applyOrders(dp.decisionId, mapOf("A" to listOf(Order(1, RiderMode.RECOVER))))
+        assertEquals(1, race.eventsOf<RaceEvent.Attack>().size, "a single attack event")
+        assertEquals(RiderMode.ATTACK, race.rider(1).mode, "later calls for the same decision change nothing")
+        // The next decision applies again.
+        val next = race.runToNextDecision()!!
+        race.applyOrders(next.decisionId, mapOf("A" to listOf(Order(2, RiderMode.ATTACK, durationS = 20))))
+        assertEquals(2, race.eventsOf<RaceEvent.Attack>().size)
+    }
+
     /** Canonical order: teamId, then riderId. Arrival order (map order, list order) never matters. */
     @Test
     fun canonicalOrderingIgnoresArrivalOrder() {
