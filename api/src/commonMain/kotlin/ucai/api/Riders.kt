@@ -22,12 +22,21 @@ enum class RiderMode {
     @SerialName("recover") RECOVER,
 }
 
+/**
+ * `racing`: on the road in a group. `dropped`: lost contact with its group (alone or in a pair off the back, a
+ * `rider_dropped` event), still on the road and still taking orders, back to `racing` once its group merges with
+ * another. `finished`: crossed the line. `abandoned`: out of the race (not used in v1).
+ */
 @Serializable
 enum class RiderStatus {
     @SerialName("racing") RACING,
     @SerialName("dropped") DROPPED,
     @SerialName("finished") FINISHED,
     @SerialName("abandoned") ABANDONED,
+    ;
+
+    /** Still riding: [RACING] or [DROPPED]. */
+    val onRoad: Boolean get() = this == RACING || this == DROPPED
 }
 
 /** Coarse public ratings, each from 1 to 5. */

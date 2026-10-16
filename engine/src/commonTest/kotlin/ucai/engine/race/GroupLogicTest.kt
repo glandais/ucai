@@ -58,6 +58,43 @@ class GroupLogicTest {
         assertTrue(winnerTime > 0)
     }
 
+    /**
+     * DROPPED status (DESIGN §2): set with `rider_dropped`, the dropped rider still takes orders, and goes back to
+     * `racing` when his group merges with another (here the group ahead eases off and he bridges back).
+     */
+    @Test
+    fun droppedStatusUntilBackInAGroup() {
+        val course = Fixtures.course(30_000.0) { d -> if (d in 3_000.0..6_000.0) 0.07 else 0.0 }
+        val riders = Fixtures.riders(8, Fixtures.STRONG, perTeam = 8) + RaceEntrant(99, "W", Fixtures.WEAK)
+        val race = Race(course, riders, seed = 1)
+        val status = mutableListOf<RiderStatus>()
+        race.addObserver { r, _ -> status += r.riders.first { it.id == 99 }.status }
+        var eased = false
+        runScripted(race) { dp, rc ->
+            when {
+                dp.decisionId == 0 -> mapOf("T0" to listOf(Order(1, RiderMode.PULL, intensity = 0.95)))
+                !eased && rc.rider(99).status == RiderStatus.DROPPED && rc.rider(1).distM > 8_000.0 -> {
+                    eased = true
+                    // A dropped rider is still on the road: his own orders are accepted.
+                    assertTrue(rc.validate("W", dp.decisionId, Order(99, RiderMode.PULL, intensity = 1.0)) == null)
+                    mapOf(
+                        "T0" to (1..8).map { Order(it, RiderMode.PULL, intensity = 0.3) },
+                        "W" to listOf(Order(99, RiderMode.PULL, intensity = 1.0)),
+                    )
+                }
+                else -> emptyMap()
+            }
+        }
+        assertTrue(eased, "the weak rider was dropped")
+        val dropTick = race.eventsOf<RaceEvent.RiderDropped>().single().tick
+        val merge = race.eventsOf<RaceEvent.GroupMerge>().first { it.tick > dropTick }
+        assertEquals(RiderStatus.RACING, status[dropTick - 1], "racing before the drop")
+        assertEquals(RiderStatus.DROPPED, status[dropTick])
+        assertEquals(RiderStatus.DROPPED, status[merge.tick - 1])
+        assertEquals(RiderStatus.RACING, status[merge.tick], "back in a group")
+        assertEquals(RiderStatus.FINISHED, race.rider(99).status)
+    }
+
     /** No `pull` rider: default rotation, every eligible rider takes seeded 30–60 s turns, recover riders never lead. */
     @Test
     fun defaultRotationWithoutPullRider() {

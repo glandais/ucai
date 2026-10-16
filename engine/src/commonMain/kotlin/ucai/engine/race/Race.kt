@@ -754,7 +754,12 @@ class Race(
         orderGroup(ng)
         emit(RaceEvent.GroupSplit(tick, g.id, ng.id, ng.ordered.map { it.id }, if (rearMoves) gapS else -gapS))
         if (rearMoves && moved.size <= 2) {
-            for (r in ng.ordered) emit(RaceEvent.RiderDropped(tick, r.id, g.id, r.distM))
+            // DESIGN §2: a rider who loses contact (alone or in a pair off the back of a group) is `dropped`
+            // until his group merges with another one (he bridges back, or a group behind catches him).
+            for (r in ng.ordered) {
+                r.status = RiderStatus.DROPPED
+                emit(RaceEvent.RiderDropped(tick, r.id, g.id, r.distM))
+            }
         }
     }
 
@@ -790,6 +795,8 @@ class Race(
         }
         gone.members.clear()
         gone.queue.clear()
+        // Back in a group: dropped riders of both groups ride again with others.
+        for (r in into.members) if (r.status == RiderStatus.DROPPED) r.status = RiderStatus.RACING
         emit(RaceEvent.GroupMerge(tick, gone.id, into.id, ids))
         reattach(into)
     }

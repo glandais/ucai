@@ -10,7 +10,6 @@ import ucai.api.RaceState
 import ucai.api.Replay
 import ucai.api.ReplayFormat
 import ucai.api.ReplayFrame
-import ucai.api.RiderStatus
 import ucai.engine.race.Race
 import ucai.engine.race.RaceObserver
 import ucai.engine.race.RaceView
@@ -61,7 +60,7 @@ class ReplayRecorder(
         val t = race.tick
         if (t == lastTick) return
         // Head of the race still on the road: finished riders stand at the line and do not count.
-        val head = race.riders.filter { it.status == RiderStatus.RACING }.maxOfOrNull { it.distM }
+        val head = race.riders.filter { it.status.onRoad }.maxOfOrNull { it.distM }
         val fine = (head != null && race.course.distanceM - head <= fineLastM) || t <= fineUntilTick
         val step = if (fine) fineStepS else stepS
         val last = race.state == RaceState.FINISHED

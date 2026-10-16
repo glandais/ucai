@@ -37,6 +37,8 @@ enum class RejectReason {
     @SerialName("invalid_value") INVALID_VALUE,
     @SerialName("rider_not_racing") RIDER_NOT_RACING,
     @SerialName("race_not_running") RACE_NOT_RUNNING,
+    /** The team already closed this decision (`ack: true`): only a repeat of an order it already sent is accepted. */
+    @SerialName("decision_acked") DECISION_ACKED,
 }
 
 @Serializable
