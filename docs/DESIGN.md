@@ -92,7 +92,7 @@ Import pipeline (run once, output committed in `races/courses/<id>.json`):
    - LBL: cut at the track point nearest to the `km 0` placemark.
    - GPX: cut the start so the remaining distance matches the official race distance (configured per course).
 3. Cumulative distance (haversine), **resample every 10 m**.
-4. Smooth elevation (≈100 m window) — raw GPS/DEM elevation gives unrealistic ±30 % spikes.
+4. Smooth elevation (≈100 m window; LBL: spike filter capping each 10 m step at 2 m, then a 200 m window) — raw GPS/DEM elevation gives unrealistic ±30 % spikes. Max 100 m gradient ≤ 22 % on every course.
 5. Gradient and heading per segment; gradient clamped to ±25 %.
 6. Climbs: no auto-detection in v1.
    - LBL: KML climb placemarks, snapped to the nearest track point; climb start/end from the gradient around that point.
@@ -347,7 +347,7 @@ Later: camera following a group, higher playback speeds, clickable events.
 
 ## 8. Testing
 
-- Physics unit tests: steady speeds against known values (e.g. 400 W, 70 kg, flat, CdA 0.32 → ≈ 43 km/h solo; 6 % climb ≈ 21 km/h), drafting gain, W′bal drain/recovery, durability loss.
+- Physics unit tests: steady speeds against known values (e.g. 400 W, 70 kg, flat, CdA 0.32 → ≈ 43 km/h solo; 6 % climb: 400 W → ≈ 24 km/h, 21 km/h at ≈ 335 W), drafting gain, W′bal drain/recovery, durability loss.
 - Group logic tests: split/merge with synthetic riders, including hysteresis (no oscillation around the threshold), a group with no `pull` rider, descents.
 - Course import tests: distance within 1 % of the official one after the km 0 cut, elevation gain plausible, LBL built from the two race lines only.
 - API tests (Ktor `testApplication`): auth scopes, no private numbers on public endpoints, order validation, stale `decisionId` rejected.

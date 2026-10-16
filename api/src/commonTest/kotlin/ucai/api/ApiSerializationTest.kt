@@ -4,6 +4,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.builtins.ListSerializer
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -69,10 +70,23 @@ class ApiSerializationTest {
         roundTrip(CreateRaceResponse.serializer(), CreateRaceResponse("r1"))
         roundTrip(RaceSummary.serializer(), RaceSummary("r1", "il-lombardia", "Il Lombardia", RaceState.RUNNING, 10))
         val detail = RaceDetail(
-            "r1", "il-lombardia", "Il Lombardia", RaceState.REGISTRATION, 42, ClockConfig(ClockMode.REALTIME),
+            "r1", "il-lombardia", "Il Lombardia", RaceState.REGISTRATION, ClockConfig(ClockMode.REALTIME),
             teams = listOf(TeamInfo("t1", "Blue", "#1f77b4")), riders = listOf(privateRider.toPublic()),
         )
         roundTrip(RaceDetail.serializer(), detail)
+    }
+
+    @Test
+    fun publicRaceDetailHidesSeedUntilFinished() {
+        for (state in listOf(RaceState.REGISTRATION, RaceState.RUNNING)) {
+            val json = roundTrip(RaceDetail.serializer(), RaceDetail("r1", "c", "Course", state, ClockConfig(ClockMode.LOCKSTEP)))
+            assertFalse("seed" in json, json)
+            assertFailsWith<IllegalArgumentException> {
+                RaceDetail("r1", "c", "Course", state, ClockConfig(ClockMode.LOCKSTEP), seed = 42)
+            }
+        }
+        val finished = RaceDetail("r1", "c", "Course", RaceState.FINISHED, ClockConfig(ClockMode.LOCKSTEP), seed = 42)
+        assertTrue("\"seed\":42" in roundTrip(RaceDetail.serializer(), finished))
     }
 
     @Test
@@ -167,7 +181,7 @@ class ApiSerializationTest {
         )
         roundTrip(Classification.serializer(), results)
         val replay = Replay(
-            race = RaceDetail("r1", "c", "Course", RaceState.FINISHED, 1, ClockConfig(ClockMode.LOCKSTEP)),
+            race = RaceDetail("r1", "c", "Course", RaceState.FINISHED, ClockConfig(ClockMode.LOCKSTEP), seed = 1),
             course = CourseDetail("c", "Course", 10.0, 0.0, points = listOf(CoursePoint(1.0, 2.0, 3.0, 0.0))),
             teams = listOf(TeamInfo("t1", "Blue", "#1f77b4")),
             riders = listOf(privateRider.toPublic()),

@@ -50,21 +50,29 @@ data class RaceSummary(
     val startedAt: String? = null,
 )
 
-/** `GET /races/{raceId}`: metadata, public start list and current state. */
+/**
+ * `GET /races/{raceId}`: metadata, public start list and current state.
+ * The [seed] rebuilds every rider profile and the seeded race factors, so it is only revealed once the race is
+ * [RaceState.FINISHED] (for replays); it is always null before that.
+ */
 @Serializable
 data class RaceDetail(
     val id: String,
     val courseId: String,
     val courseName: String,
     val state: RaceState,
-    val seed: Long,
     val clock: ClockConfig,
     val wind: Wind? = null,
     val teams: List<TeamInfo> = emptyList(),
     val riders: List<PublicRider> = emptyList(),
     val tick: Int = 0,
     val startedAt: String? = null,
-)
+    val seed: Long? = null,
+) {
+    init {
+        require(seed == null || state == RaceState.FINISHED) { "the seed of a race is only public once it is finished" }
+    }
+}
 
 /** `POST /races/{raceId}/teams` (admin). Riders are generated when [riders] is omitted. */
 @Serializable

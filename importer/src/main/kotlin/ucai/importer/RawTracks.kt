@@ -51,7 +51,7 @@ fun parseGpx(file: File): GpxFile = file.readXml { r ->
 }
 
 /** A KML placemark: style id without `#`, and its Point or LineString coordinates (KML order is lon,lat,ele). */
-data class Placemark(val name: String, val style: String, val coordinates: List<GeoPoint>)
+data class Placemark(val name: String, val style: String, val coordinates: List<GeoPoint>, val description: String? = null)
 
 fun parseKml(file: File): List<Placemark> = file.readXml { r ->
     val result = ArrayList<Placemark>()
@@ -59,16 +59,18 @@ fun parseKml(file: File): List<Placemark> = file.readXml { r ->
     var name = ""
     var style = ""
     var coords = emptyList<GeoPoint>()
+    var description: String? = null
     while (r.hasNext()) {
         when (r.next()) {
             XMLStreamConstants.START_ELEMENT -> when (r.localName) {
-                "Placemark" -> { inPlacemark = true; name = ""; style = ""; coords = emptyList() }
+                "Placemark" -> { inPlacemark = true; name = ""; style = ""; coords = emptyList(); description = null }
                 "name" -> if (inPlacemark) name = r.elementText.trim()
+                "description" -> if (inPlacemark) description = r.elementText.trim()
                 "styleUrl" -> if (inPlacemark) style = r.elementText.trim().removePrefix("#")
                 "coordinates" -> if (inPlacemark) coords = parseKmlCoordinates(r.elementText)
             }
             XMLStreamConstants.END_ELEMENT -> if (r.localName == "Placemark") {
-                result += Placemark(name, style, coords)
+                result += Placemark(name, style, coords, description)
                 inPlacemark = false
             }
         }

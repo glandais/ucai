@@ -82,7 +82,14 @@ fun kmlRaceTrack(placemarks: List<Placemark>): List<GeoPoint> {
 
 private fun List<GeoPoint>.nearest(p: GeoPoint, range: IntRange) = range.minBy { haversineM(this[it], p) }
 
-fun importLbl(rawDir: File, officialM: Double = 259_500.0): Import {
+fun importLbl(
+    rawDir: File,
+    officialM: Double = 259_500.0,
+    // The KML elevation model has spikes (up to -28 % over 100 m after Stockeu): cap each 10 m step at 2 m (20 %)
+    // and smooth over 200 m. This keeps the max 100 m gradient at 20 %.
+    smoothingWindowM: Double = 200.0,
+    maxStepM: Double? = 2.0,
+): Import {
     val placemarks = parseKml(File(rawDir, "liege-bastogne-liege-2026.kml"))
     val raw = kmlRaceTrack(placemarks)
     val rawLength = cumulativeDistances(raw).last()
@@ -94,14 +101,19 @@ fun importLbl(rawDir: File, officialM: Double = 259_500.0): Import {
     val to = raw.nearest(finish, raw.size - third until raw.size)
     val track = raw.subList(from, to + 1)
     val tunnels = ArrayList<ClosedFloatingPointRange<Double>>()
-    val base = buildCourse("liege-bastogne-liege", "Liège-Bastogne-Liège", track, "Liège", "Liège") { a, b -> tunnels += a..b }
+    val base = buildCourse("liege-bastogne-liege", "Liège-Bastogne-Liège", track, "Liège", "Liège", smoothingWindowM, maxStepM) { a, b -> tunnels += a..b }
     // Climb placemarks are listed in race order: snap each one after the previous summit, so a climb whose
     // road is also used near the start (Côte des Forges) is not snapped to the wrong passage.
     var after = 0
     val climbs = placemarks.filter { it.style == KmlStyles.CLIMB }.map { pm ->
         val p = pm.coordinates.single()
         val near = base.points[base.nearestIndex(p.lat, p.lon, after until base.points.size)].distM
-        base.deriveClimb(pm.name, near, searchM = 600.0).also { after = base.segmentAt(it.endM) }
+        val derived = base.deriveClimb(pm.name, near, searchM = 600.0)
+        after = base.segmentAt(derived.endM)
+        // The official length ("^ 465 m / 2,2 km à 7,5%") sets the foot; the derived one is only a fallback.
+        val lengthKm = pm.description?.let { officialClimbLengthKm(it) }
+        if (lengthKm == null) derived
+        else base.climbBetween(pm.name, (derived.endM - lengthKm * 1000.0).coerceAtLeast(0.0), derived.endM)
     }
     val cutM = cumulativeDistances(raw.subList(0, from + 1)).last()
     val reason = "cut at raw point #$from nearest to the 'km 0' placemark " +
@@ -109,6 +121,12 @@ fun importLbl(rawDir: File, officialM: Double = 259_500.0): Import {
         "finish at raw point #$to (${fmt0(haversineM(raw[to], finish))} m from the finish placemark); official ${officialM / 1000} km"
     return Import(base.copy(climbs = climbs), rawLength, cutM, reason, tunnels)
 }
+
+private val CLIMB_LENGTH = Regex("""/\s*(\d+(?:,\d+)?)\s*km\s+à""")
+
+/** Climb length in km from a velowire placemark description such as `^ 465 m / 2,2 km à 7,5%`. */
+fun officialClimbLengthKm(description: String): Double? =
+    CLIMB_LENGTH.find(description)?.groupValues?.get(1)?.replace(',', '.')?.toDouble()
 
 // Summits placed on the computed profile; lengths are the organiser's figures where it gives them.
 val MILANO_SANREMO = GpxCourse(

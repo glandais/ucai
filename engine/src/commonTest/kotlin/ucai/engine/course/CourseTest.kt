@@ -158,4 +158,13 @@ class CourseTest {
         assertEquals(course.points.size, detail.points.size)
         assertEquals(course.points[7].eleM, detail.points[7].eleM)
     }
+
+    @Test
+    fun spikeFilterSpreadsSteepStepsAndKeepsTotal() {
+        val ele = doubleArrayOf(100.0, 100.0, 92.0, 90.0, 90.0, 90.0, 90.0)
+        limitSteps(ele, 2.0)
+        for (i in 1 until ele.size) assertTrue(abs(ele[i] - ele[i - 1]) <= 2.0 + 1e-9, ele.toList().toString())
+        assertEquals(90.0, ele.last(), 1e-9)
+        assertEquals(listOf(100.0, 100.0, 98.0, 96.0, 94.0, 92.0, 90.0), ele.toList())
+    }
 }

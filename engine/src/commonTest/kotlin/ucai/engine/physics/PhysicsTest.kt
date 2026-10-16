@@ -27,7 +27,7 @@ class PhysicsTest {
         val at400 = kmh(steadySpeed(400.0, climb))
         val at335 = kmh(steadySpeed(335.0, climb))
         println("6 % climb: 400 W -> ${at400.r1()} km/h, 335 W -> ${at335.r1()} km/h")
-        // Physics gives ~24.6 km/h at 400 W (5.7 W/kg); DESIGN's ~21 km/h corresponds to ~4.3 W/kg.
+        // Matches DESIGN §8: ~24 km/h at 400 W (5.7 W/kg), ~21 km/h at ~335 W.
         assertEquals(24.6, at400, 1.0)
         assertEquals(21.0, at335, 1.0)
     }

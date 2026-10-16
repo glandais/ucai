@@ -110,6 +110,22 @@ fun bridgeTunnels(ele: DoubleArray, stepM: Double, steep: Double = 0.5, maxLengt
     return bridged
 }
 
+/**
+ * Spike filter: limits the elevation change between consecutive points to ±[maxDeltaM] and carries the excess
+ * over to the following points, so the total climb or descent is kept but spread over a longer stretch.
+ * [ele] is modified in place.
+ */
+fun limitSteps(ele: DoubleArray, maxDeltaM: Double) {
+    var carry = 0.0
+    val raw = ele.copyOf()
+    for (i in 1 until ele.size) {
+        val want = raw[i] - raw[i - 1] + carry
+        val step = want.coerceIn(-maxDeltaM, maxDeltaM)
+        carry = want - step
+        ele[i] = ele[i - 1] + step
+    }
+}
+
 /** Gradient of each segment `i -> i + 1`, clamped to ±[maxAbs]; the last point repeats the previous one. */
 fun gradients(ele: DoubleArray, dist: DoubleArray, maxAbs: Double = MAX_GRADIENT): DoubleArray {
     val g = DoubleArray(ele.size)
@@ -148,7 +164,8 @@ private fun Double.roundTo(decimals: Int): Double {
 
 /**
  * Builds a course (without climbs) from a raw track already cut at km 0:
- * resample every 10 m, bridge tunnel artifacts, smooth elevation over ~100 m, then gradient and heading per segment.
+ * resample every 10 m, bridge tunnel artifacts, optionally limit the per-point step to [maxStepM] (spike filter),
+ * smooth elevation over [smoothingWindowM], then gradient and heading per segment.
  */
 fun buildCourse(
     id: String,
@@ -156,12 +173,15 @@ fun buildCourse(
     track: List<GeoPoint>,
     startName: String? = null,
     finishName: String? = null,
+    smoothingWindowM: Double = SMOOTHING_WINDOW_M,
+    maxStepM: Double? = null,
     onBridge: (startM: Double, endM: Double) -> Unit = { _, _ -> },
 ): Course {
     val (pts, dist) = resample(track, COURSE_STEP_M)
-    val window = (SMOOTHING_WINDOW_M / COURSE_STEP_M).roundToInt() / 2 * 2 + 1
+    val window = (smoothingWindowM / COURSE_STEP_M).roundToInt() / 2 * 2 + 1
     val rawEle = DoubleArray(pts.size) { pts[it].eleM }
     bridgeTunnels(rawEle, COURSE_STEP_M).forEach { onBridge(dist[it.first], dist[it.last]) }
+    if (maxStepM != null) limitSteps(rawEle, maxStepM)
     val ele = smoothElevation(rawEle, window)
     val grad = gradients(ele, dist)
     val head = headings(pts)
