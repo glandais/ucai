@@ -1,0 +1,162 @@
+.groups-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--panel);
+}
+
+.groups-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.groups-title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.groups-head-info {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.groups-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-card {
+  padding: 7px 9px 8px;
+  background: var(--panel-2);
+  border-left: 4px solid var(--line);
+  border-radius: 3px;
+}
+
+.group-card.group-lead {
+  border-left-color: var(--accent);
+}
+
+.group-card.group-finished {
+  border-left-color: #95de64;
+}
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-label {
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.group-tag {
+  padding: 0 5px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.group-size {
+  min-width: 22px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-spacer {
+  flex: 1;
+}
+
+.group-gap {
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.group-gap.none {
+  color: var(--muted);
+}
+
+.group-lead .group-gap {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.group-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-finished .group-sub {
+  color: var(--text);
+  align-items: center;
+  gap: 6px;
+}
+
+.group-solo-team {
+  color: var(--text);
+}
+
+.group-teams {
+  display: flex;
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 2px;
+  overflow: hidden;
+  gap: 1px;
+}
+
+.group-team {
+  flex-basis: 0;
+  min-width: 2px;
+}
+
+.group-riders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.group-more {
+  padding: 1px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
+}
