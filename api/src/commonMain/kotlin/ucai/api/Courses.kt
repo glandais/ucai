@@ -24,6 +24,8 @@ data class CourseDetail(
     val finishName: String? = null,
     val points: List<CoursePoint>,
     val climbs: List<Climb> = emptyList(),
+    /** Geometry for maps, denser than [points] in turns (Douglas-Peucker); empty when [points] are already exact. */
+    val track: List<CoursePoint> = emptyList(),
 ) {
     fun summary() = CourseSummary(id, name, distanceM, elevationGainM, startName, finishName)
 }

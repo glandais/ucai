@@ -6,6 +6,7 @@ import io.ktor.util.sha1
 import ucai.api.CourseDetail
 import ucai.api.CoursePoint
 import ucai.engine.course.Course
+import ucai.engine.course.displayTrack
 import ucai.engine.riders.RiderGenerator
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -37,14 +38,17 @@ private class InMemoryCourseCatalog(courses: List<Course>) : CourseCatalog {
 
 /**
  * The public course detail (`GET /courses/{courseId}`, replay `course`): points decimated to one every [stepM]
- * (always keeping the finish), climbs unchanged.
+ * (always keeping the finish), climbs unchanged, and the map [CourseDetail.track] within [trackToleranceM] of the course.
  */
-fun Course.decimatedDetail(stepM: Double = KernelConfig.COURSE_POINT_STEP_M): CourseDetail {
+fun Course.decimatedDetail(
+    stepM: Double = KernelConfig.COURSE_POINT_STEP_M,
+    trackToleranceM: Double = KernelConfig.COURSE_TRACK_TOLERANCE_M,
+): CourseDetail {
     val every = maxOf(1, (stepM / ucai.engine.course.COURSE_STEP_M).toInt())
     val kept = points.filterIndexed { i, _ -> i % every == 0 || i == points.lastIndex }
     return CourseDetail(
         id, name, distanceM, elevationGainM, startName, finishName,
-        kept.map { CoursePoint(it.lat, it.lon, it.eleM, it.distM) }, climbs,
+        kept.map { CoursePoint(it.lat, it.lon, it.eleM, it.distM) }, climbs, displayTrack(trackToleranceM),
     )
 }
 
@@ -114,6 +118,9 @@ class KernelConfig(
     companion object {
         /** Spacing of the points of a public course detail. */
         const val COURSE_POINT_STEP_M = 50.0
+
+        /** Largest distance between the course and its map track (`CourseDetail.track`), in meters. */
+        const val COURSE_TRACK_TOLERANCE_M = 1.0
     }
 }
 

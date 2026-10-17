@@ -159,7 +159,7 @@ export class ReplayModel implements RaceSource {
     const a = this.alpha(k, t);
     const R = this.riderCount;
     const base = k * R;
-    const points = this.meta.course.points;
+    const points = this.meta.course.track;
     const courseM = this.meta.course.distanceM;
 
     const riders: RiderState[] = new Array(R);

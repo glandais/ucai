@@ -97,7 +97,7 @@ export class RaceMap {
       geometry: { type: 'Point', coordinates: [0, 0] },
       properties: { color: this.riderColors[i]!, row: 0, sel: false },
     }));
-    const bounds = courseBounds(meta.course.points);
+    const bounds = courseBounds(meta.course.track);
     this.map = new MapLibreMap({
       container,
       style: STYLE_URL,
@@ -132,7 +132,7 @@ export class RaceMap {
 
   /** Fits the camera to the whole course. */
   fitCourse(animate = true): void {
-    const bounds = courseBounds(this.meta.course.points);
+    const bounds = courseBounds(this.meta.course.track);
     if (bounds) this.map.fitBounds(bounds, { padding: 48, duration: animate ? 700 : 0 });
   }
 
@@ -144,7 +144,7 @@ export class RaceMap {
     // While following, zoom around the followed group rather than the mouse pointer.
     this.map.scrollZoom.enable(target.kind === 'none' ? undefined : { around: 'center' });
     this.easing = false;
-    const center = this.last && this.followCenter(this.last, spreadRiders(this.meta.course.points, this.last, this.spacing()));
+    const center = this.last && this.followCenter(this.last, spreadRiders(this.meta.course.track, this.last, this.spacing()));
     if (center) {
       this.easing = true;
       this.map.easeTo({ center, zoom: Math.max(this.map.getZoom(), FOLLOW_ZOOM), duration: 700 });
@@ -163,7 +163,7 @@ export class RaceMap {
   // --- rendering ---------------------------------------------------------------------------------------
 
   private spacing() {
-    const lat = this.last?.groups[0]?.lat ?? this.meta.course.points[0]?.lat ?? 45;
+    const lat = this.last?.groups[0]?.lat ?? this.meta.course.track[0]?.lat ?? 45;
     const zoom = this.map.getZoom();
     return spacingFor(metersPerPixel(lat, zoom), dotSpacingPx(zoom));
   }
@@ -171,7 +171,7 @@ export class RaceMap {
   private render(): void {
     const snapshot = this.last;
     if (!snapshot || !this.ready || this.destroyed) return;
-    const placed = spreadRiders(this.meta.course.points, snapshot, this.spacing());
+    const placed = spreadRiders(this.meta.course.track, snapshot, this.spacing());
     const followed = followedGroup(snapshot, this.follow);
     this.renderRiders(placed, followed);
     this.renderGroups(snapshot, followed);
@@ -286,7 +286,7 @@ export class RaceMap {
     const g = followedGroup(snapshot, this.follow);
     if (!g) {
       if (this.follow.kind === 'none' || snapshot.finishedRiderIds.length === 0) return null;
-      const last = this.meta.course.points[this.meta.course.points.length - 1];
+      const last = this.meta.course.track[this.meta.course.track.length - 1];
       return last ? [last.lon, last.lat] : null;
     }
     let tail: PlacedRider | null = null;
@@ -307,7 +307,7 @@ export class RaceMap {
         data: {
           type: 'Feature',
           properties: {},
-          geometry: { type: 'LineString', coordinates: course.points.map((p) => [p.lon, p.lat]) },
+          geometry: { type: 'LineString', coordinates: course.track.map((p) => [p.lon, p.lat]) },
         },
       });
       map.addSource(SRC_CLIMBS, {
@@ -317,7 +317,7 @@ export class RaceMap {
           features: this.meta.climbs.map((c) => ({
             type: 'Feature',
             properties: { name: c.name },
-            geometry: { type: 'LineString', coordinates: courseSlice(course.points, c.startM, c.endM) },
+            geometry: { type: 'LineString', coordinates: courseSlice(course.track, c.startM, c.endM) },
           })),
         },
       });
@@ -345,7 +345,7 @@ export class RaceMap {
     if (!this.ready) {
       // The slot may have been resized by the grid since the map was created.
       map.resize();
-      const center = this.follow.kind !== 'none' && this.last ? this.followCenter(this.last, spreadRiders(course.points, this.last, this.spacing())) : null;
+      const center = this.follow.kind !== 'none' && this.last ? this.followCenter(this.last, spreadRiders(course.track, this.last, this.spacing())) : null;
       if (center) map.jumpTo({ center, zoom: Math.max(map.getZoom(), FOLLOW_ZOOM) });
       else this.fitCourse(false);
     }
@@ -355,7 +355,7 @@ export class RaceMap {
   }
 
   private addStaticMarkers(): void {
-    const { points } = this.meta.course;
+    const { track: points } = this.meta.course;
     const first = points[0];
     const last = points[points.length - 1];
     if (!first || !last) return;

@@ -249,7 +249,7 @@ Base path `/api/v1`, JSON, distances in meters, speeds in m/s, times in seconds 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/courses` | List courses (id, name, distance, elevation gain). |
-| GET | `/courses/{courseId}` | Full course: points decimated to one every 50 m (finish kept), profile, climbs. |
+| GET | `/courses/{courseId}` | Full course: points decimated to one every 50 m (finish kept), profile, climbs, and `track`, the map geometry: the 10 m course simplified by Douglas-Peucker within 1 m, each point with its `distM` (one point every 50 m cut hairpins by up to 13 m). |
 
 ### Races
 
@@ -363,7 +363,7 @@ React + Vite + TypeScript, MapLibre GL with OpenFreeMap vector tiles (free, no k
 
 - **Race list**: finished races from the kernel API, or a replay file loaded locally.
 - **Replay view**:
-  - Map: course line, climbs marked, one dot per rider colored by team, group labels.
+  - Map: course line, climbs marked, one dot per rider colored by team, group labels. Line and dots use the course `track` (the `points` when a course has none, e.g. the full 10 m course of harness replays); the profile uses the `points`.
   - **Elevation profile** (canvas) below: groups as markers on the profile, climbs shaded — the "TV graphic" of the race.
   - **Groups panel** (TV-style): head of race, gaps in time, riders in each group with their team color, km to go.
   - Event list (not clickable in v1).

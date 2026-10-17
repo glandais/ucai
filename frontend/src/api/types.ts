@@ -37,12 +37,16 @@ export interface Climb {
 export interface CourseDetailWire extends CourseSummary {
   points: CoursePointTuple[];
   climbs?: Climb[];
+  /** Map geometry (Douglas-Peucker of the 10 m course); absent or empty when `points` are already exact. */
+  track?: CoursePointTuple[];
 }
 
 /** Decoded course: points as objects, sorted by `distM`. */
 export interface CourseDetail extends CourseSummary {
   points: CoursePoint[];
   climbs: Climb[];
+  /** What the map draws and places riders on: the wire `track`, or `points` without one. Sorted by `distM`. */
+  track: CoursePoint[];
 }
 
 // --- Races, teams, riders ----------------------------------------------------------------------------

@@ -26,7 +26,8 @@ export function decodeSnapshotRider(r: SnapshotRiderTuple): SnapshotRider {
 
 export function decodeCourse(c: CourseDetailWire): CourseDetail {
   const points = c.points.map(decodeCoursePoint);
-  return { ...c, points, climbs: c.climbs ?? [] };
+  const track = c.track && c.track.length > 0 ? c.track.map(decodeCoursePoint) : points;
+  return { ...c, points, climbs: c.climbs ?? [], track };
 }
 
 export class ReplayFormatError extends Error {}

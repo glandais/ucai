@@ -32,6 +32,16 @@ describe('replay decoding', () => {
     expect(decodeSnapshotRider([7, 1, 2, 3, 4])).toEqual({ riderId: 7, distM: 1, speed: 2, groupId: 3, rankInGroup: 4 });
   });
 
+  it('maps the course on its track, or on its points without one', () => {
+    const plain = decodeReplay(syntheticReplayWire());
+    expect(plain.course.track).toBe(plain.course.points);
+    const wire = syntheticReplayWire();
+    wire.course.track = [[45, 7, 100, 0], [45.004, 7.001, 104, 420], [45.1, 7, 200, 10_000]];
+    const course = decodeReplay(wire).course;
+    expect(course.points).toHaveLength(11);
+    expect(course.track[1]).toEqual({ lat: 45.004, lon: 7.001, eleM: 104, distM: 420 });
+  });
+
   it('rejects other versions and inconsistent frames', () => {
     expect(() => decodeReplay({ ...syntheticReplayWire(), version: 2 })).toThrow(ReplayFormatError);
     const bad = syntheticReplayWire();
