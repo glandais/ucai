@@ -26,7 +26,7 @@ object Tuning {
      * Aero drag the riders behind take off the front rider of a big group: ≈ 2.6 % with one rider behind (Blocken
      * 2013), ≈ 5 % in a line of 4 (team pursuit, Barry 2015). With [FRONT_SHELTER_RIDERS] = 3 a group of 4 gets 5 %.
      */
-    const val FRONT_SHELTER = 0.08
+    const val FRONT_SHELTER = 0.05
     /** Group size scale of the front shelter (riders behind). */
     const val FRONT_SHELTER_RIDERS = 3.0
     /** Draft floor deep in a tiny group and in a large peloton (fraction of the solo aero drag). */
@@ -39,7 +39,7 @@ object Tuning {
 
     // --- Terrain (Fatigue.terrainFactor) ---
     /** Extra power a rider sustains on a climb, fraction of cpEff (0 = same as on the flat). */
-    const val UPHILL_POWER_GAIN = 0.10
+    const val UPHILL_POWER_GAIN = 0.08
     /** Gradient where the uphill gain starts, and where it is full. */
     const val UPHILL_FROM_GRADIENT = 0.02
     const val UPHILL_FULL_GRADIENT = 0.06
