@@ -24,7 +24,8 @@ object Tuning {
     // --- Drafting (draftFactor) ---
     /**
      * Aero drag the riders behind take off the front rider of a big group: ≈ 2.6 % with one rider behind (Blocken
-     * 2013), ≈ 5 % in a line of 4 (team pursuit, Barry 2015). With [FRONT_SHELTER_RIDERS] = 3 a group of 4 gets 5 %.
+     * 2013), ≈ 5 % in a line of 4 (team pursuit, Barry 2015). Kept below these: 1.4 % for a pair, 3.2 % for a group of 4,
+     * 5 % in a big peloton (0.08, which matched a line of 4, made the combined passes too fast and scored worse).
      */
     const val FRONT_SHELTER = 0.05
     /** Group size scale of the front shelter (riders behind). */

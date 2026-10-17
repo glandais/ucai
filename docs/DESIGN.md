@@ -156,7 +156,7 @@ Integration (explicit Euler): `a = (P·η / max(v, 1 m/s) − F) / m`, capped at
 - Wind: one optional constant vector per race (direction + speed, 0 by default). `v_wind_axial` is its component along each segment's heading.
 - The aero time constant (≈10 s at race speed) keeps dt = 1 s stable.
 
-**Drafting** `k_draft` by rank in the group: 1st 1.00 alone, down to 0.92 at the front of a big group (the riders behind push the air: ≈ 2 % with one rider behind, 5 % in a line of 4, like Blocken 2013 and team-pursuit measurements), 2nd 0.64, 3rd 0.55, then decreasing to a floor of ≈0.50 in a tiny group and ≈0.25 deep in a large peloton (CFD of a 121-rider peloton finds 5–10 % of the solo drag in its middle; the first value, 0.35, kept domestiques sitting in at 13–15 % CP lost and 5–16 riders more than 20 min down). No special case on climbs: aero drag is already small at climbing speeds, so drafting fades naturally. The group's pace setter rides with the front factor.
+**Drafting** `k_draft` by rank in the group: 1st 1.00 alone, down to 0.95 at the front of a big group (the riders behind push the air: 1.4 % with one rider behind, 3.2 % in a group of 4, a little under Blocken 2013's 2.6 % and the ≈ 5 % of a team-pursuit line), 2nd 0.64, 3rd 0.55, then decreasing to a floor of ≈0.50 in a tiny group and ≈0.25 deep in a large peloton (CFD of a 121-rider peloton finds 5–10 % of the solo drag in its middle; the first value, 0.35, kept domestiques sitting in at 13–15 % CP lost and 5–16 riders more than 20 min down). No special case on climbs: aero drag is already small at climbing speeds, so drafting fades naturally. The group's pace setter rides with the front factor.
 
 ### Fatigue
 
@@ -172,7 +172,7 @@ Integration (explicit Euler): `a = (P·η / max(v, 1 m/s) − F) / m`, capped at
 
   Calibration targets: a domestique (durability 0.5) who has done 2000 kJ has lost 10–15 % of CP (10.4 %); a protected leader (0.8) ~5 % at 1500 kJ (3.2 %; 4 % at durability 0.75). The final pass moved E0 from 3 to 5 kJ/kg and K from 185 to 220 within these targets: the controlling domestiques' fading CP was what slowed the whole race over the day. The first form, `(energyKj / (massKg · K))²`, could not hit both, and a monument costs every rider 4000–6000 kJ (≈ 170 W average for 7 h, like real power files), where it put the whole field at 25–35 %. The concave form keeps growing slowly after the targets: at the finish leaders are at 6–10 %, domestiques at 9–13 % on average (19 % for a 0.55 domestique at 5000 kJ). The onset E0 (~350 kJ) means the first half hour or so costs nothing. This is the core mechanic of the monuments.
 - When W′bal ≈ 0, a rider can't produce more than `cpEff`.
-- **Uphill power**: on a climb a rider holds more power than on the flat for the same effort (lower speed and inertia, more torque per pedal stroke; field and lab studies find a few % to ~10 %). The engine multiplies the CP a rider is measured against by a terrain factor, 1 below 2 % and rising linearly to 1.10 at 6 %: intensities, caps and the W′ balance use `cpEff × terrain` (`cpNow`), while the `cpEff` reported to teams stays the flat value. Without it the peloton climbed at 4.2–4.5 W/kg behind a domestique riding tempo, and LBL and Lombardia were 1–3 km/h under target.
+- **Uphill power**: on a climb a rider holds more power than on the flat for the same effort (lower speed and inertia, more torque per pedal stroke; field and lab studies find a few % to ~10 %). The engine multiplies the CP a rider is measured against by a terrain factor, 1 below 2 % and rising linearly to 1.08 at 6 %: intensities, caps and the W′ balance use `cpEff × terrain` (`cpNow`), while the `cpEff` reported to teams stays the flat value. Without it the peloton climbed at 4.2–4.5 W/kg behind a domestique riding tempo, and LBL and Lombardia were 1–3 km/h under target.
 - No nutrition/bonk model in v1.
 
 ### Groups
@@ -388,7 +388,17 @@ Later: camera following a group, higher playback speeds, clickable events.
 
 `./gradlew :runner:calibrate --args="--seeds 1..8"` prints one report per race (with its score and nonzero terms), a summary per course (with the course score and the mean penalty of each term) and the score per course and in total at the end (`--trace true` adds a line every 10 km). The tuned numbers live in `ucai.engine.physics.Tuning` (engine) and `ucai.team.strategy.Tactics` (strategy).
 
-After the final pass (seeds 1..8, score 12.03):
+After the final pass, the three approaches combined (engine pace + tactics + terrain; seeds 1..8, score 7.55; seeds 1..16, 8.41):
+
+| Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min | Peloton at half distance | CP lost, leaders / domestiques | Score |
+|--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|--------------------------|--------------------------------|-------|
+| Milano-Sanremo | 42.4–42.9 km/h | sprinter 6, puncheur 2 (5 different riders) | 0–2 s, a bunch sprint | 4 min, km 257–270 of 297, never won | +9–14 min, 0 | 66–67 of 70 | 8.2–9.3 / 9.0–10.0 % | 0.04 |
+| Liège-Bastogne-Liège | 39.9–40.5 km/h | puncheur 7, climber 1 (6 different riders) | 0–15 s | 2.8–4 min, km 179–222 of 257, never won | +20–45 min, 0–9 | 65–67 of 70 | 6.6–7.8 / 10.7–12.2 % | 5.41 |
+| Il Lombardia | 38.5–38.8 km/h | climber 5, all-rounder 3 (7 different riders) | 13–63 s | 3.9–4 min, km 176–211 of 238, never won | +17–29 min, 0–7 | 66 of 70 | 6.2–7.3 / 11.0–12.5 % | 2.11 |
+
+Everywhere: top speed 77–83 km/h (straight descents), best 20-min power ≤ 6.3 W/kg, best 60-min power ≤ 391 W (≤ 4.7 W/kg). Every rider finishes, no order is rejected; the HTTP runner gives the same hashes as the harness. The three approaches below were tuned separately against the baseline, then merged in order and re-measured (seeds 1..8, then 1..16 for the decisions, since a constant change moves the score by ±1–3): engine pace alone 12.03; + tactics 9.22 (kept); + terrain (turns, tucked descents, Crr 0.0032) 9.77 on 1..8 but 19.72 vs 20.22 summed over 1..8 and 9..16 (kept, and descents and hairpins are now realistic; Crr 0.004 instead scored the same within noise, so the measured race-tyre value stayed); then, the combined passes being faster, the uphill gain back from +10 % to +8 % (16 seeds 9.86 → 9.40) and the front shelter of a big group from 8 % to 5 % (→ 8.41), both back inside the literature. Tried on the combined state and dropped: a gruppetto pull of 1.25 (8.83), break and control climb caps at 1.0 (14.02: Lombardia +0.3 km/h but many more riders > 20 min), a front shelter that saturates faster (1.5 riders scale, 9.43). Open: Lombardia stays 0.2–0.5 km/h under 39 km/h and is won by an all-rounder in 3 of 8; LBL's last finishers are still 20–45 min down (domestiques who did their work and were dropped on Stockeu or the Redoute, at 75–83 % of CP; no abandons in v1); the break never wins (0/24), at the bottom of "may win sometimes".
+
+Engine-pace pass alone (seeds 1..8, score 12.03):
 
 | Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min | Peloton at half distance | CP lost, leaders / domestiques | Score |
 |--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|--------------------------|--------------------------------|-------|
@@ -398,7 +408,7 @@ After the final pass (seeds 1..8, score 12.03):
 
 Everywhere: top speed 70–73 km/h (descents), best 20-min power ≤ 6.3 W/kg, best 60-min power ≤ 412 W (≤ 4.9 W/kg). Every rider finishes, no order is rejected, about 1.2 s per race; the HTTP runner gives the same hashes as the harness. What the pass changed, all in the engine (`Tuning`), by how much each helped (score on seeds 1..8, each step on top of the previous ones): draft floor 0.35 → 0.25 deep in a large peloton (44.96 → 38.37), front-rider shelter (→ 35.57), uphill power (→ 23.28 at +6 %), durability onset and scale (→ 13.90 at +8 %), uphill +10 % and a stronger front shelter (→ 13.50), shared turns in the default rotation (→ 12.03). Tried and dropped: scaling `pull` intensities by shared turns (34–112), a softer or harder default rotation (± 0.05: within noise), faster descents (within noise). Seeds 9..16 score 14.90 with the same settings. What is left is mostly strategy: LBL's top 10 still finish together in 5 of 8 races (the leaders' attacks on the last climb are chased down by the teams whose leader is behind, then nobody attacks on the run-in), Lombardia is still up to 1 km/h under 39 (the race rides at the break's pace, `pull` 0.95, for 200 km), and domestiques dropped alone on an early climb (Saint-Roch, Valpiana) ride home alone 25–50 min down.
 
-After the final pass (team tactics only, engine unchanged; seeds 1..8, score 26.29):
+Tactics pass alone (team tactics only, engine unchanged; seeds 1..8, score 26.29):
 
 | Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min | Peloton at half distance | CP lost, leaders / domestiques | Score |
 |--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|--------------------------|--------------------------------|-------|
@@ -418,7 +428,7 @@ Baseline before the final pass (real time gaps, seeds 1..8, score 44.96):
 
 Everywhere: top speed 68–73 km/h (descents), best 20-min power ≤ 5.9 W/kg, best 60-min power ≤ 400 W (≤ 4.7 W/kg). Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. With the old `gapS` (distance ÷ speed) the same harness scored 47.58 (Sanremo 4.44, LBL 16.49, Lombardia 26.64). Open: LBL and Lombardia are 1–3 km/h under the target range; no abandons yet (v2), so the last riders still finish 30–50 min down where real ones would abandon.
 
-After the terrain pass (turns, tucked descents, Crr 0.0032; seeds 1..8, score 35.03):
+Terrain pass alone (turns, tucked descents, Crr 0.0032; seeds 1..8, score 35.03):
 
 | Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min | Peloton at half distance | CP lost, leaders / domestiques | Score |
 |--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|--------------------------|--------------------------------|-------|
