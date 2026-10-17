@@ -152,7 +152,7 @@ F = m·g·(sin θ + Crr·cos θ) + ½·ρ·CdA·k_draft·(v + v_wind_axial)²
 
 Integration (explicit Euler): `a = (P·η / max(v, 1 m/s) − F) / m`, capped at **+1.5 m/s²**; `v += a·dt`; `dist += v·dt`.
 - Stall guard: a racing rider never goes below a crawl speed of **1.5 m/s** (≈ 5 km/h, walking the bike). On a 17–22 % ramp a cooked rider's power can be below gravity even at the 1 m/s floor, and he would otherwise stop for good.
-- η = 0.976 drivetrain efficiency, g = 9.81, Crr = 0.004, ρ from elevation (≈1.225 at sea level, −10 % per 1000 m).
+- η = 0.976 drivetrain efficiency, g = 9.81, Crr = 0.0032 (race tyres on good asphalt; 0.004 until the final calibration pass), ρ from elevation (≈1.225 at sea level, −10 % per 1000 m).
 - Wind: one optional constant vector per race (direction + speed, 0 by default). `v_wind_axial` is its component along each segment's heading.
 - The aero time constant (≈10 s at race speed) keeps dt = 1 s stable.
 
@@ -188,7 +188,8 @@ Each tick:
      - **Shared turns**: k riders taking turns each spend 1/k of the time in the wind and recover in the wheels, so at the same effort a turn is harder: the intensity is multiplied by 1 + 0.2 · (1 − 1/k) (× 1.1 for a pair, × 1.18 for 10 riders), then capped by `maxIntensity` and W′. A big organized group rides faster than a pair. `pull` intensities are not scaled: an ordered pull is the power at the front, and strategies already pick higher values when several riders share a chase (scaling them too let every break go to the line and the chases drop half the field).
      - Not eligible: `recover` riders, `follow` riders with `maxIntensity` < 0.9, riders whose W′bal is below 30 %.
      - A group with nobody eligible rides at the pace of its front rider: `recover` at 0.7 × `cpEff` (was 0.55), `follow` at min(default, `maxIntensity`).
-   - **Descents**: group speed = min(power-derived speed, speed cap from the leading rider's `descending` and the gradient). Followers freewheel. No splits on descents in v1.
+   - **Descents** (gradient ≤ −3 %): group speed = the faster of the power-derived speed and the freewheeling speed of a tucked rider (CdA × 0.8) on the 2nd wheel — downhill the wheels come past a slower front rider — then capped by the speed limit below for the leading rider's `descending`. Followers freewheel. No splits on descents in v1.
+   - **Speed limits** (`SpeedLimits`, every terrain, every rider and group): straight descents 75–90 km/h by `descending`, 1 km/h less per % below −3 %; turns at a lateral grip of 0.65–0.9 g by `descending` (lean 33–42°) on the radius measured from the course headings plus 3 m of racing line, so a 10 m hairpin is taken at 33–39 km/h; riders brake before a turn at 0.6 × their grip less the slope's pull. The radius is the distance between the midpoints of two segments over their heading change, the smallest over windows of 40, 80 and 160 m (course tracks are OSM polylines with a node every 25–100 m, so a 20 m window sees every node of a smooth bend as a hairpin).
 2. **Followers** compute the power needed to hold the group speed with their draft factor, bounded by their mode (`follow` with `maxIntensity`, `recover` at 0.75 × `cpEff`); with `maxIntensity` above 1 a follower digs into W′ to hang on. If they can't produce it, they slow down and a gap opens.
 3. **Split** (with hysteresis): a rider or sub-group more than **3 s** behind the rider ahead **for 3 consecutive ticks** becomes a new group.
 4. **Merge**: a group that comes within **1 s** of the group ahead merges into it.
@@ -416,6 +417,18 @@ Baseline before the final pass (real time gaps, seeds 1..8, score 44.96):
 | Il Lombardia | 36.2–37.0 km/h | climber 4, all-rounder 2, puncheur 2 | 0–62 s | 3.9–5.1 min, km 208–209 of 238, won 2/8 | +30–51 min, 4–10 | 62–66 of 70 | 7.6–8.7 / 13.5–15.1 % | 25.78 |
 
 Everywhere: top speed 68–73 km/h (descents), best 20-min power ≤ 5.9 W/kg, best 60-min power ≤ 400 W (≤ 4.7 W/kg). Every rider finishes, no order is rejected, a race takes about 1 s including the strategies. With the old `gapS` (distance ÷ speed) the same harness scored 47.58 (Sanremo 4.44, LBL 16.49, Lombardia 26.64). Open: LBL and Lombardia are 1–3 km/h under the target range; no abandons yet (v2), so the last riders still finish 30–50 min down where real ones would abandon.
+
+After the terrain pass (turns, tucked descents, Crr 0.0032; seeds 1..8, score 35.03):
+
+| Course | Winning avg speed | Winners | Largest gap in the top 10 | Early break: max gap, caught at | Last finisher, riders > 20 min | Peloton at half distance | CP lost, leaders / domestiques | Score |
+|--------|-------------------|---------|---------------------------|---------------------------------|--------------------------------|--------------------------|--------------------------------|-------|
+| Milano-Sanremo | 40.8–41.9 km/h | sprinter 7, puncheur 1 | 0 s, a bunch sprint | 3.2–4 min, km 257–271 of 297, never won | +12–39 min, 0–8 | 66–67 of 70 | 10.3–11.8 / 11.2–12.3 % | 1.58 |
+| Liège-Bastogne-Liège | 38.2–39.3 km/h | puncheur 6, all-rounder 1, climber 1 | 0–6 s (194 s when the break was caught 3 km out) | 2.7–5.8 min, km 209–254 of 257, never won | +32–56 min, 2–16 | 56–66 of 70 | 7.9–9.4 / 13.1–15.2 % | 13.22 |
+| Il Lombardia | 36.5–37.4 km/h | climber 5, puncheur 2, all-rounder 1 | 9–74 s | 3.8–5.1 min, km 208–210 of 238, won 2/8 | +25–49 min, 3–10 | 64–67 of 70 | 7.5–8.6 / 13.3–15.0 % | 20.23 |
+
+Everywhere: top speed 77–84 km/h (straight descents), best 20-min power ≤ 6.0 W/kg, best 60-min power ≤ 386 W (≤ 4.7 W/kg). Score of each step: turns and tucked descents 42.69, then Crr 0.0032 35.03 (without the turns it would be 30.00, but with Lombardia's hairpins taken at 70+ km/h).
+
+Where the time goes (`--terrain true`, winner of seed 1): descents are now close to real splits (Poggio descent 3.2 km in 3:36, 53 km/h; Cipressa descent 62 km/h; Lombardia descents ≤ −5 % at 62 km/h, LBL's at 67 km/h). The deficit is on the climbs and the flat, i.e. in the pace the strategies ride: Lombardia's early climbs at VAM 1130–1350 (Selvino 26:27, Ghisallo 24:15; a real peloton climbs them near VAM 1500), the finale climbs at VAM 1600–1950 (Civiglio 12:21), and 116 km of rolling road at 43 km/h behind domestiques pulling at 0.82–0.85 × CP. The course profiles are clean (10 m vs 100 m gradients differ by 0.2–0.3 % rms, no fake ramp outside the named climbs, the batch-1 tunnel bridge and LBL step limit already removed the DEM spikes).
 
 #### Score
 

@@ -50,6 +50,25 @@ object Tuning {
     /** Stall guard: nobody goes slower than this, m/s (≈ 5.4 km/h, walking the bike up a 20 % ramp). */
     const val CRAWL_SPEED = 1.5
 
+    // --- Descents and turns (Physics.descentSpeedCap, cornerSpeed; race.SpeedLimits) ---
+    /** Straight-descent cap of the worst descender, km/h (batch 2: 60 + 25 × skill − 2 km/h per % below −3 %). */
+    const val DESCENT_MAX_KMH = 75.0
+    /** Added by descending skill (1.0 = best). */
+    const val DESCENT_SKILL_KMH = 15.0
+    /** Removed per percent of slope below −3 %. */
+    const val DESCENT_STEEP_KMH = 1.0
+    /** Lateral grip used in turns, in g, worst and best descender (lean 33–42°; a 10 m hairpin: 33–39 km/h). */
+    const val CORNER_GRIP_MIN = 0.65
+    const val CORNER_GRIP_MAX = 0.9
+    /** On closed roads riders take the racing line: the radius they ride is this much wider than the road's, m. */
+    const val CORNER_LINE_M = 3.0
+    /** Braking before a turn, share of the cornering grip (the rest is margin; gravity is removed downhill). */
+    const val BRAKE_GRIP_SHARE = 0.6
+    /** Aero of a tucked, freewheeling rider on a descent, fraction of his CdA (hands on the drops, chin down). */
+    const val DESCENT_CDA_FACTOR = 0.8
+    /** Turns slow riders on every terrain (false: only on descents, gradient ≤ −3 %). */
+    const val CORNERS_EVERYWHERE = true
+
     // --- Durability (Fatigue.loss) ---
     /** Energy scale of the durability loss, kJ per kg of rider + bike. */
     const val DURABILITY_K = 220.0

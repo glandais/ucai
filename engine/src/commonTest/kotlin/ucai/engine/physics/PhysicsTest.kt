@@ -112,8 +112,9 @@ class PhysicsTest {
 
     @Test
     fun descentCapRespected() {
-        val c = flat.copy(gradient = -0.08)
-        val cap = descentSpeedCap(descending = 0.3, gradient = -0.08)
+        // Steep enough for 300 W to reach the cap (≈ 70 km/h for a poor descender at −12 %).
+        val c = flat.copy(gradient = -0.12)
+        val cap = descentSpeedCap(descending = 0.3, gradient = -0.12)
         var v = 10.0
         repeat(120) {
             v = eulerStep(v, 300.0, c, maxSpeed = cap)
