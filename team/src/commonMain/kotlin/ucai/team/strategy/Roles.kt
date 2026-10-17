@@ -50,7 +50,8 @@ enum class Role { LEADER, LIEUTENANT, SPRINTER, DOMESTIQUE }
 /**
  * Roles at the start (DESIGN §5): the leader is the best fit for the course, the lieutenant the second best, the
  * sprinter the fastest finisher (may be the leader), the others are domestiques. [breakaway] is the domestique
- * sent in the early break when the team plays that card (the strongest domestique by CP).
+ * sent in the early break when the team plays that card (the strongest rouleur or domestique by CP, else
+ * the strongest other domestique).
  */
 class TeamRoles(
     val leader: PrivateRider,
@@ -98,8 +99,12 @@ class TeamRoles(
             val sprinter = own.maxWith(compareBy<PrivateRider> { it.profile.pMax / it.profile.cda }.thenByDescending { it.id })
             val lieutenant = byFit.drop(1).firstOrNull { it.id != sprinter.id || kind == FinaleKind.SPRINT }
             val domestiques = own.filter { it.id != leader.id && it.id != sprinter.id && it.id != lieutenant?.id }
-            val breakaway = (domestiques.ifEmpty { own.filter { it.id != leader.id } })
-                .maxWith(compareBy<PrivateRider> { it.profile.cp }.thenByDescending { it.id })
+            // A rouleur or a pure domestique goes in the break; a climber or puncheur is kept for the finale.
+            val pool = domestiques.ifEmpty { own.filter { it.id != leader.id } }
+            val breakaway = pool.maxWith(
+                compareBy<PrivateRider> { it.archetype == Archetype.ROULEUR || it.archetype == Archetype.DOMESTIQUE }
+                    .thenBy { it.profile.cp }.thenByDescending { it.id },
+            )
             return TeamRoles(leader, lieutenant, sprinter, domestiques, breakaway)
         }
     }

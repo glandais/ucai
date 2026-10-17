@@ -94,9 +94,13 @@ class TeamStrategyTest {
     @Test
     fun leaderAttacksOnTheLastClimbAndSprintsAtTheEnd() {
         val s = TeamStrategy("A", course, field, mine)
-        val orders = (0..600).flatMap { k -> s.decide(event(20_000 + k * 30, 230_000.0 + k * 40.0)) }
-        val leaderAttacks = orders.filter { it.mode == RiderMode.ATTACK && it.riderId == s.roles.leader.id }
-        assertEquals(1, leaderAttacks.size)
+        val byDist = (0..600).map { k -> 230_000.0 + k * 40.0 to s.decide(event(20_000 + k * 30, 230_000.0 + k * 40.0)) }
+        val orders = byDist.flatMap { it.second }
+        fun leaderAttacks(range: ClosedFloatingPointRange<Double>) = byDist.filter { it.first in range }
+            .flatMap { it.second }.count { it.mode == RiderMode.ATTACK && it.riderId == s.roles.leader.id }
+        assertEquals(1, leaderAttacks(0.0..course.climbs.last().endM), "one attack on the last climb")
+        // After it, at most one late attack in the last km (a leader who would lose the sprint of his group).
+        assertTrue(leaderAttacks(course.climbs.last().endM..course.distanceM) <= 1)
         val domestiques = s.roles.domestiques.map { it.id }
         assertTrue(orders.any { it.mode == RiderMode.PULL && it.riderId in domestiques }, "domestiques pull on the climb")
         assertTrue(orders.any { it.mode == RiderMode.SPRINT && it.riderId == s.roles.sprinter.id })
