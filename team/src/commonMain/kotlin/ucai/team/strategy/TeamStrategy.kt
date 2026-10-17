@@ -24,12 +24,17 @@ import kotlin.random.Random
  * @property control the team controls the gap to the break; null = decided from the public field (the 3 teams
  *   whose leader looks strongest for the course).
  * @property seed seeds the team's own draws (attack points), so a run is reproducible.
+ * @property breakGapS the most the controlling teams let the early break have (s); a race-level draw (the batch gives
+ *   every team the same one), so the gap is decided by the race, not by a constant.
+ * @property chaseFromKm km to go from which the controlling teams chase the break down instead of holding the gap.
  */
 data class StrategyParams(
     val aggressiveness: Double = 0.5,
     val breakaway: Boolean = false,
     val control: Boolean? = null,
     val seed: Long = 0,
+    val breakGapS: Double = 360.0,
+    val chaseFromKm: Double = 70.0,
 )
 
 /**
@@ -42,11 +47,14 @@ object Tactics {
     const val BREAK_FROM_MAX_M = 15_000.0
     const val BREAK_WINDOW_END_M = 80_000.0
     const val BREAK_ATTEMPTS = 2
+    /** A second attempt waits this long after the first (s). */
+    const val BREAK_RETRY_S = 300
     const val BREAK_ATTACK_INTENSITY = 0.8
     const val BREAK_ATTACK_S = 60
-    /** Break riders' turns, and in the last 30 km (the peloton's chase must be faster: it shares the work). */
+    /** Break riders' turns, and in the last [BREAK_LATE_M] (the peloton's chase must be faster: it shares the work). */
     const val BREAK_PULL = 1.05
     const val BREAK_PULL_LATE = 1.08
+    const val BREAK_LATE_M = 30_000.0
     const val BREAK_PULL_SPENT = 0.9
     /** Before the finale the break rides the climbs at this at most (it climbs at tempo, like the peloton). */
     const val BREAK_CLIMB_CAP = 0.95
@@ -54,36 +62,47 @@ object Tactics {
     const val BREAK_WAIT_S = 60.0
     const val BREAK_WAIT = 0.75
 
-    /** Control: target gap (s) = [CONTROL_S_PER_KM] × km to go, clamped; chase until back under [CONTROL_RELEASE] × target. */
-    const val CONTROL_S_PER_KM = 1.3
-    const val CONTROL_MIN_GAP_S = 20.0
-    const val CONTROL_MAX_GAP_S = 240.0
-    const val CONTROL_RELEASE = 0.6
-    /** In the last [CONTROL_CATCH_KM] km the controlling teams chase whenever a break is ahead: they want it back. */
-    const val CONTROL_CATCH_KM = 30.0
     /**
-     * Tempo while the break builds its lead (below the break's [BREAK_PULL], so it gets minutes); [CONTROL_HOLD] by one
-     * domestique once it is established and the gap is in the band, else the peloton falls back to the faster
-     * default rotation and chases it down; chase above the target gap (by km to go: > 100, > 40, less).
+     * Control: the target gap is the race's [StrategyParams.breakGapS] (drawn in [CONTROL_GAP_MIN_S]..[CONTROL_GAP_MAX_S],
+     * like the 4–8 min of real monuments) down to [CONTROL_TAPER_KM] km to go, then shrinking linearly towards the
+     * finish, at least [CONTROL_MIN_GAP_S].
+     */
+    const val CONTROL_GAP_MIN_S = 240.0
+    const val CONTROL_GAP_MAX_S = 480.0
+    const val CONTROL_TAPER_KM = 150.0
+    const val CONTROL_MIN_GAP_S = 20.0
+    /** The race's [StrategyParams.chaseFromKm] is drawn in this range: the chase only starts in the last 60–80 km. */
+    const val CHASE_FROM_MIN_KM = 60.0
+    const val CHASE_FROM_MAX_KM = 80.0
+    /**
+     * Tempo while the break builds its lead (below the break's [BREAK_PULL], so it gets minutes), until the gap first
+     * reaches the target; then one domestique per team holds it: his pull follows the gap, [CONTROL_HOLD] at
+     * [CONTROL_HOLD_AT] × target, [CONTROL_HOLD_GAIN] more per target of gap above, within
+     * [CONTROL_HOLD_MIN]..[CONTROL_HOLD_MAX]. The floor is under the tempo, so a break that is slow to build its lead is
+     * not reeled in 150 km from the line.
      */
     const val CONTROL_TEMPO = 0.85
     const val CONTROL_HOLD = 1.02
-    /**
-     * In the band, the hold pull follows the gap: [CONTROL_HOLD] at [CONTROL_HOLD_AT] × target, [CONTROL_HOLD_GAIN]
-     * more per target of gap above, within [CONTROL_HOLD_MIN]..[CONTROL_HOLD_MAX]; so the gap stays in the band.
-     */
     const val CONTROL_HOLD_AT = 0.8
     const val CONTROL_HOLD_GAIN = 0.5
-    const val CONTROL_HOLD_MIN = 0.92
+    const val CONTROL_HOLD_MIN = 0.8
     const val CONTROL_HOLD_MAX = 1.15
     /**
      * Before the finale, control pulls on a climb are capped at this (no [CLIMB_BONUS]): in the draft on the flat
      * anyone holds a 1.05 pull, on a climb a weaker domestique would be dropped.
      */
     const val CONTROL_CLIMB_CAP = 0.95
-    const val CONTROL_CHASE_EARLY = 1.15
-    const val CONTROL_CHASE_MID = 1.2
-    const val CONTROL_CHASE_LATE = 1.3
+    /**
+     * The chase (from [StrategyParams.chaseFromKm]): [CONTROL_CHASE_RIDERS] domestiques per team at [CONTROL_CHASE];
+     * when the break is still far ahead for the distance left (more than [CONTROL_CHASE_HARD_S_PER_KM] s per km to
+     * go), [CONTROL_CHASE_RIDERS_HARD] at [CONTROL_CHASE_HARD]. No catch point is set: the break is caught where the
+     * gap, its legs and the climbs say.
+     */
+    const val CONTROL_CHASE = 1.15
+    const val CONTROL_CHASE_HARD = 1.25
+    const val CONTROL_CHASE_RIDERS = 2
+    const val CONTROL_CHASE_RIDERS_HARD = 3
+    const val CONTROL_CHASE_HARD_S_PER_KM = 5.0
     /** Teams that control when [StrategyParams.control] is null: those whose leader looks strongest. */
     const val CONTROL_TEAMS = 3
     /** Tempo when no break is ahead after the break window (it was caught early, or none went), until the finale. */
@@ -99,10 +118,40 @@ object Tactics {
     /** Above the default rotation on climbs (1.1), else a pull would slow the group down. */
     const val CLIMB_PULL = 1.15
     const val CLIMB_PULL_SPRINT_COURSE = 1.1
+    /** Domestiques set the pace only in a group of at least this many riders; 2 of them on the last climb, else 1. */
+    const val CLIMB_WORK_MIN_GROUP = 5
+    const val CLIMB_WORKERS_LAST = 2
+    const val CLIMB_WORKERS = 1
 
     /** Puncheur-style attacks go between these distances before the summit (seeded, at most 70 % of the climb). */
     const val ATTACK_MIN_BEFORE_TOP_M = 300.0
     const val ATTACK_MAX_BEFORE_TOP_M = 2_500.0
+    /**
+     * A climb this long or more is a climber's: a climber (or an all-rounder on a climbing course) goes between
+     * [CLIMBER_ATTACK_FROM] and [CLIMBER_ATTACK_TO] of its length, and rides on for the rest of it (1 s per
+     * [CLIMBER_ATTACK_M_PER_S] m, within [CLIMBER_ATTACK_MIN_S]..[CLIMBER_ATTACK_MAX_S]); a puncheur's attack lasts
+     * [PUNCH_ATTACK_S].
+     */
+    const val LONG_CLIMB_M = 3_000.0
+    /** A planned attack this far or more before the summit of a long climb is ridden climber-style (long effort). */
+    const val CLIMBER_STYLE_BEFORE_TOP_M = 1_000.0
+    /** A puncheur's attack point is at most this share of the climb before the summit (and 100 m more than the min). */
+    const val ATTACK_MAX_SHARE = 0.7
+    const val CLIMBER_ATTACK_FROM = 0.3
+    const val CLIMBER_ATTACK_TO = 0.7
+    const val CLIMBER_ATTACK_M_PER_S = 6.0
+    const val CLIMBER_ATTACK_MIN_S = 30
+    const val CLIMBER_ATTACK_MAX_S = 120
+    const val PUNCH_ATTACK_S = 30
+    /** No attack in the last [ATTACK_LAST_M] of a climb: it would end at the summit. */
+    const val ATTACK_LAST_M = 100.0
+    /** Attack intensity (fraction of the W′-allowed max): [ATTACK_INTENSITY] + [ATTACK_INTENSITY_AGGR] × aggressiveness. */
+    const val ATTACK_INTENSITY = 0.9
+    const val ATTACK_INTENSITY_AGGR = 0.1
+    /** On the last climb, a leader attacks only if fewer than this many rivals of his group look stronger. */
+    const val ATTACK_LAST_TOP = 2
+    /** A leader attacks from a group of at least this many riders (2: he may drop the last rival in a pair). */
+    const val ATTACK_MIN_GROUP = 2
     /** Chance that a leader at its attack point waits for the next decision point instead. */
     const val ATTACK_HESITATION = 0.5
     /**
@@ -113,11 +162,20 @@ object Tactics {
     const val LATE_ATTACK_TO_M = 1_500.0
     const val LATE_ATTACK_MAX_GROUP = 30
     const val LATE_ATTACK_CHANCE = 0.25
-    const val LATE_ATTACK_S = 60
+    const val LATE_ATTACK_BASE = 0.5
+    const val LATE_ATTACK_MIN_W = 0.35
+    const val LATE_ATTACK_S = 30
     /** Leader attacks need this W′bal fraction. */
     const val ATTACK_MIN_W = 0.5
+    /** On the last climb and after it (the last chance), a leader goes with less: whoever has more W′ left wins. */
+    const val ATTACK_MIN_W_LAST = 0.25
     const val RESPONSE_MIN_W = 0.45
     const val RESPONSE_S = 120
+    /** A responder lets the wheel go below this W′bal fraction: he saves the rest for the group's finale. */
+    const val RESPONSE_GIVE_UP_W = 0.3
+    /** Responders' `follow` cap: [RESPONSE_MAX] + [RESPONSE_MAX_AGGR] × aggressiveness (they dig into W′ to close). */
+    const val RESPONSE_MAX = 1.15
+    const val RESPONSE_MAX_AGGR = 0.2
     /** Attacks are followed only this close to the finish, unless the attacker is a rival leader. */
     const val RESPONSE_WINDOW_M = 80_000.0
 
@@ -125,27 +183,55 @@ object Tactics {
     const val CHASE_WINDOW_M = 50_000.0
     const val CHASE_MIN_GAP_S = 10.0
     const val CHASE_MIN_GAP_FINALE_S = 3.0
-    /** Helpers' turns in a chase: above 1, since several share the front. */
+    /**
+     * Domestiques' turns in a chase: above 1, since several share the front (a team with domestiques left can bring
+     * a move back). A lieutenant or sprinter helping takes his turns at [CHASE_PULL_PROTECTED]: he has his own race.
+     */
     const val CHASE_PULL = 1.1
-    /** In the last [CHASE_ALL_OUT_M], up to 3 helpers with W′ left chase at [CHASE_PULL_ALL_OUT]. */
+    const val CHASE_PULL_PROTECTED = 0.95
+    /** In the last [CHASE_ALL_OUT_M], up to 3 helpers with W′ left chase, domestiques at [CHASE_PULL_ALL_OUT]. */
     const val CHASE_ALL_OUT_M = 8_000.0
-    const val CHASE_PULL_ALL_OUT = 1.3
+    const val CHASE_PULL_ALL_OUT = 1.15
+    /** A sprinter's team can only win a sprint: its domestiques empty themselves in the last [CHASE_ALL_OUT_M]. */
+    const val CHASE_PULL_ALL_OUT_SPRINTER = 1.3
+    const val CHASE_HELPERS = 2
+    const val CHASE_HELPERS_ALL_OUT = 3
     /** A front group this small rides for itself: the leader takes turns at [LEADER_PULL]. */
     const val SMALL_GROUP = 10
     const val LEADER_PULL = 0.92
     /** In the last [CHASE_ALL_OUT_M] the leader's turns in a small front group are harder: the race is on. */
     const val LEADER_PULL_FINALE = 1.05
+    /**
+     * A leader in a move of at most [MOVE_SIZE] riders at the head of the race rides it like a time trial
+     * ([LEADER_MOVE_PULL], W′ permitting); a leader chasing without helpers takes his turns at [LEADER_CHASE_PULL]
+     * (a group of leaders chases poorly: each one would rather someone else tows him to the line).
+     */
+    const val MOVE_SIZE = 3
+    const val LEADER_MOVE_PULL = 1.15
+    const val LEADER_CHASE_PULL = 0.95
+    /** The leader stops taking turns in the last [LEADER_PULL_TO_M] (he saves himself for the sprint). */
+    const val LEADER_PULL_TO_M = 1_500.0
 
     /** Lead-out from this distance to go, at this intensity; everyone with a chance sprints from [SPRINT_ARM_M]. */
     const val LEAD_OUT_FROM_M = 2_500.0
     const val LEAD_OUT_PULL = 1.2
     const val SPRINT_ARM_M = 1_100.0
+    /** The lead-out man stops at this distance to go, and is picked among teammates with this W′bal fraction. */
+    const val LEAD_OUT_TO_M = 400.0
 
     /** Spent: cpEff below this fraction of CP, or W′bal below this fraction of wPrimeEff. */
     const val SPENT_CP = 0.85
     const val SPENT_W = 0.15
     /** Domestiques still work (control, climbs) down to this cpEff fraction of CP, below [SPENT_CP]: it's their job. */
     const val WORKER_MIN_CP = 0.75
+    /**
+     * W′bal fractions a rider needs to work: control and tempo ([WORKER_MIN_W]), the climbs of the finale
+     * ([CLIMB_WORK_MIN_W]), the leader's turns in a small group ([LEADER_WORK_MIN_W]), the lead-out ([LEAD_OUT_MIN_W]).
+     */
+    const val WORKER_MIN_W = 0.2
+    const val CLIMB_WORK_MIN_W = 0.3
+    const val LEADER_WORK_MIN_W = 0.3
+    const val LEAD_OUT_MIN_W = 0.25
     /**
      * A spent rider dropped behind the peloton, this far behind it or in a group of 3 or less, is out of the race:
      * he waits (`follow` at [GRUPPETTO_WAIT]) while another group is less than [GRUPPETTO_BEHIND_S] behind, so the
@@ -187,11 +273,12 @@ object Tactics {
  *    lieutenant follows with `targetRiderId` and `maxIntensity`;
  * 4. early breakaway rider (seeded teams);
  * 5. domestiques pull at the foot of the finale climbs;
- * 6. chase when the leader is behind in the finale (all out in the last 8 km), or ride the move when the leader is
- *    in a small front group;
- * 7. control the break (strongest teams): easy tempo while it goes, then one domestique holds the gap in a band
- *    under a target shrinking towards the finish, chasing above it (and always in the last 30 km); with no break
- *    ahead before the finale, tempo all the same;
+ * 6. chase when the leader is behind in the finale (all out in the last 8 km; never a move with a teammate in it),
+ *    or ride the move when the leader is in a small front group; behind a move, contenders (and every rider whose
+ *    teammate is in it) sit on, marking a rival so they take no turn;
+ * 7. control the break (strongest teams): easy tempo while it builds its lead, then one domestique each holds the
+ *    gap under the race's target (shrinking towards the finish), and from 60–80 km to go they chase it down; with
+ *    no break ahead before the finale, tempo all the same;
  * 8. spent domestiques hang on in the wheels (`recover` when W′ is low); once dropped behind the peloton they wait
  *    for the stragglers behind and ride home together; everyone else `follow`s with a `maxIntensity` above 1 so
  *    they dig into W′ to stay in the group.
@@ -214,6 +301,7 @@ class TeamStrategy(
     private val ownById = own.associateBy { it.id }
     private val rivalLeaders = reading.leaderIds - own.map { it.id }.toSet()
     val controls: Boolean = params.control ?: (reading.rankOf(teamId) <= Tactics.CONTROL_TEAMS)
+    private val maxGapS = params.breakGapS.coerceIn(Tactics.CONTROL_MIN_GAP_S, Tactics.CONTROL_GAP_MAX_S * 2)
     private val finishM = course.distanceM
     private val finale: List<Climb> = finaleClimbs(course, Tactics.FINALE_WINDOW_M)
 
@@ -222,12 +310,12 @@ class TeamStrategy(
     /** Per finale climb: where the leader attacks, and whether it attacks there at all. */
     private val attackPlan: List<Pair<Double, Boolean>> = finale.mapIndexed { i, c ->
         val len = c.endM - c.startM
-        val long = len >= 3_000.0
+        val long = len >= Tactics.LONG_CLIMB_M
         val climberStyle = roles.leader.archetype == Archetype.CLIMBER ||
             (roles.leader.archetype == Archetype.ALL_ROUNDER && kind == FinaleKind.CLIMBING)
         val lo = Tactics.ATTACK_MIN_BEFORE_TOP_M
-        val hi = max(lo + 100.0, min(len * 0.7, Tactics.ATTACK_MAX_BEFORE_TOP_M))
-        val at = if (climberStyle && long) c.startM + len * rng.nextDouble(0.3, 0.7) else c.endM - rng.nextDouble(lo, hi)
+        val hi = max(lo + 100.0, min(len * Tactics.ATTACK_MAX_SHARE, Tactics.ATTACK_MAX_BEFORE_TOP_M))
+        val at = if (climberStyle && long) c.startM + len * rng.nextDouble(Tactics.CLIMBER_ATTACK_FROM, Tactics.CLIMBER_ATTACK_TO) else c.endM - rng.nextDouble(lo, hi)
         val last = i == finale.lastIndex
         val penultimate = i == finale.lastIndex - 1
         val go = last || (penultimate && rng.nextDouble() < params.aggressiveness)
@@ -258,6 +346,7 @@ class TeamStrategy(
         breakaway(v, ::assign)
         climbWork(v, want.keys, ::assign)
         chase(v, want.keys, ::assign)
+        mark(v, want.keys, ::assign)
         control(v, want.keys, ::assign)
         for (s in v.mine) {
             if (!s.status.onRoad) continue
@@ -344,9 +433,9 @@ class TeamStrategy(
         val finisher = listOf(roles.sprinter.id, roles.leader.id).firstOrNull { v.racing(it) } ?: return
         val g = v.group(finisher) ?: return
         val toGo = v.toGo(finisher)
-        if (g.id != head.id || g.size < Tactics.SMALL_GROUP || toGo > Tactics.LEAD_OUT_FROM_M || toGo < 400.0) return
+        if (g.id != head.id || g.size < Tactics.SMALL_GROUP || toGo > Tactics.LEAD_OUT_FROM_M || toGo < Tactics.LEAD_OUT_TO_M) return
         if (roles.sprinter.id == finisher && v.toGo(finisher) <= Tactics.SPRINT_ARM_M) assign(finisher, Order(finisher, RiderMode.SPRINT))
-        val man = v.teammatesIn(g.id, setOf(finisher, roles.leader.id)).filter { v.w(it.riderId) > 0.25 }
+        val man = v.teammatesIn(g.id, setOf(finisher, roles.leader.id)).filter { v.w(it.riderId) > Tactics.LEAD_OUT_MIN_W }
             .maxByOrNull { ownById.getValue(it.riderId).profile.pMax }
         if (man != null) assign(man.riderId, pull(man.riderId, Tactics.LEAD_OUT_PULL))
     }
@@ -365,23 +454,35 @@ class TeamStrategy(
         lateAttack(v, id, g)?.let { return assign(id, it) }
         for ((i, c) in finale.withIndex()) {
             val (at, go) = attackPlan[i]
-            if (!go || i in attackedClimbs || d < at || d >= c.endM - 100.0) continue
+            if (!go || i in attackedClimbs || d < at || d >= c.endM - Tactics.ATTACK_LAST_M) continue
             // A rival just went from this group: follow first (responses), counter at the next decision point.
             val rivalWent = events.any { it is RaceEvent.Attack && it.fromGroupId == g.id && !ownById.containsKey(it.riderId) }
             if (rivalWent) continue
             // Not everyone goes on the same pedal stroke: wait for a later decision point now and then.
             if (rng.nextDouble() < Tactics.ATTACK_HESITATION) continue
+            // Not enough W′ yet, or alone: maybe at a later decision point, while still on the climb.
+            val minW = if (i == finale.lastIndex) Tactics.ATTACK_MIN_W_LAST else Tactics.ATTACK_MIN_W
+            if (v.w(id) < minW || g.size < Tactics.ATTACK_MIN_GROUP) continue
+            // On the last climb only the strongest-looking leaders of the group go; the others follow if they can.
+            if (i == finale.lastIndex && strongerRivals(v, id, g) >= Tactics.ATTACK_LAST_TOP) continue
             attackedClimbs += i
-            if (v.w(id) < Tactics.ATTACK_MIN_W || g.size < 3) continue
-            val climberStyle = (c.endM - c.startM) >= 3_000.0 && at < c.endM - 1_000.0
-            val duration = if (climberStyle) min(120, max(30, ((c.endM - d) / 6.0).toInt())) else 30
-            val o = Order(id, RiderMode.ATTACK, intensity = 0.9 + 0.1 * params.aggressiveness, durationS = duration)
+            val climberStyle = (c.endM - c.startM) >= Tactics.LONG_CLIMB_M && at < c.endM - Tactics.CLIMBER_STYLE_BEFORE_TOP_M
+            val duration = if (climberStyle) {
+                ((c.endM - d) / Tactics.CLIMBER_ATTACK_M_PER_S).toInt().coerceIn(Tactics.CLIMBER_ATTACK_MIN_S, Tactics.CLIMBER_ATTACK_MAX_S)
+            } else Tactics.PUNCH_ATTACK_S
+            val o = Order(id, RiderMode.ATTACK, intensity = attackIntensity(), durationS = duration)
             leaderAttack = o to (v.tick + duration)
             return assign(id, o)
         }
     }
 
     private var lateAttackDone = false
+
+    /** Rivals in [g] with a better public course fit than [id]. */
+    private fun strongerRivals(v: View, id: Int, g: GroupSummary): Int {
+        val mine = publicById[id]?.let { kind.fit(it.ratings) } ?: return 0
+        return v.ridersIn(g.id).count { r -> !ownById.containsKey(r) && (publicById[r]?.let { kind.fit(it.ratings) } ?: 0.0) > mine }
+    }
 
     /**
      * After the last climb, a leader who would lose the sprint of his small front group (a rival there has a better
@@ -393,14 +494,16 @@ class TeamStrategy(
         val toGo = v.toGo(id)
         if (toGo > Tactics.LATE_ATTACK_FROM_M || toGo < Tactics.LATE_ATTACK_TO_M) return null
         if (finale.isNotEmpty() && v.state(id).distM < finale.last().endM) return null
-        if (g.id != v.head?.id || g.size < 3 || g.size > Tactics.LATE_ATTACK_MAX_GROUP) return null
+        if (g.id != v.head?.id || g.size < Tactics.ATTACK_MIN_GROUP || g.size > Tactics.LATE_ATTACK_MAX_GROUP) return null
         val mySprint = publicById[id]?.ratings?.sprint ?: return null
         val rivals = v.ridersIn(g.id).filter { !ownById.containsKey(it) }
         val beaten = rivals.any { (publicById[it]?.ratings?.sprint ?: 0) > mySprint }
-        if (!beaten || v.w(id) < Tactics.ATTACK_MIN_W) return null
-        if (rng.nextDouble() >= Tactics.LATE_ATTACK_CHANCE * (0.5 + params.aggressiveness)) return null
+        if (!beaten || v.w(id) < Tactics.LATE_ATTACK_MIN_W) return null
+        // Every leader of the group draws: the chance is shared, so about one goes at a time, not all of them at once.
+        val contenders = rivals.count { it in rivalLeaders } + 1
+        if (rng.nextDouble() >= Tactics.LATE_ATTACK_CHANCE * (Tactics.LATE_ATTACK_BASE + params.aggressiveness) / contenders) return null
         lateAttackDone = true
-        val o = Order(id, RiderMode.ATTACK, intensity = 0.9 + 0.1 * params.aggressiveness, durationS = Tactics.LATE_ATTACK_S)
+        val o = Order(id, RiderMode.ATTACK, intensity = attackIntensity(), durationS = Tactics.LATE_ATTACK_S)
         leaderAttack = o to (v.tick + Tactics.LATE_ATTACK_S)
         return o
     }
@@ -408,7 +511,7 @@ class TeamStrategy(
     /** 3. Follow attacks from the leader's group. */
     private fun responses(v: View, events: List<RaceEvent>, assign: (Int, Order) -> Unit) {
         response?.let { r ->
-            val alive = v.tick < r.untilTick && v.racing(r.riderId) && v.w(r.riderId) >= Tactics.SPENT_W
+            val alive = v.tick < r.untilTick && v.racing(r.riderId) && v.w(r.riderId) >= Tactics.RESPONSE_GIVE_UP_W
             if (alive) {
                 assign(r.riderId, Order(r.riderId, RiderMode.FOLLOW, targetRiderId = r.targetId, maxIntensity = maxFollow()))
                 return
@@ -432,7 +535,9 @@ class TeamStrategy(
         }
     }
 
-    private fun maxFollow() = 1.15 + 0.2 * params.aggressiveness
+    private fun maxFollow() = Tactics.RESPONSE_MAX + Tactics.RESPONSE_MAX_AGGR * params.aggressiveness
+
+    private fun attackIntensity() = Tactics.ATTACK_INTENSITY + Tactics.ATTACK_INTENSITY_AGGR * params.aggressiveness
 
     /** 4. Early break. */
     private fun breakaway(v: View, assign: (Int, Order) -> Unit) {
@@ -453,7 +558,7 @@ class TeamStrategy(
                     joining -> Tactics.BREAK_WAIT
                     // Cooked, he still takes his turns (a break of `follow` riders would ride the faster default rotation).
                     v.spent(b) -> Tactics.BREAK_PULL_SPENT
-                    v.toGo(b) < 30_000.0 -> Tactics.BREAK_PULL_LATE
+                    v.toGo(b) < Tactics.BREAK_LATE_M -> Tactics.BREAK_PULL_LATE
                     else -> Tactics.BREAK_PULL
                 }
                 // No climbing bonus before the finale: the peloton's control doesn't take one either.
@@ -466,7 +571,7 @@ class TeamStrategy(
                 assign(b, pull(b, if (finale) terrain(intensity, d) else early))
             }
             g.id == pel.id && d in breakFromM..Tactics.BREAK_WINDOW_END_M &&
-                breakAttempts < Tactics.BREAK_ATTEMPTS && v.tick - breakLastTick > 300 -> {
+                breakAttempts < Tactics.BREAK_ATTEMPTS && v.tick - breakLastTick > Tactics.BREAK_RETRY_S -> {
                 breakAttempts++
                 breakLastTick = v.tick
                 assign(b, Order(b, RiderMode.ATTACK, intensity = Tactics.BREAK_ATTACK_INTENSITY, durationS = Tactics.BREAK_ATTACK_S))
@@ -488,14 +593,14 @@ class TeamStrategy(
         val i = finale.indexOfFirst { d >= it.startM - Tactics.CLIMB_FOOT_LEAD_M && d < it.endM - Tactics.CLIMB_STOP_BEFORE_TOP_M }
         if (i < 0) return
         val g = v.group(leader) ?: return
-        if (g.size < 5) return
+        if (g.size < Tactics.CLIMB_WORK_MIN_GROUP) return
         val intensity = when {
             kind != FinaleKind.SPRINT && roles.leader.archetype.attacksOnClimbs -> Tactics.CLIMB_PULL
             kind == FinaleKind.SPRINT && (controls || roles.leader.archetype.attacksOnClimbs) -> Tactics.CLIMB_PULL_SPRINT_COURSE
             else -> return
         }
-        val n = if (i == finale.lastIndex) 2 else 1
-        for (w in workers(v, g.id, busy + leader, 0.3).take(n)) {
+        val n = if (i == finale.lastIndex) Tactics.CLIMB_WORKERS_LAST else Tactics.CLIMB_WORKERS
+        for (w in workers(v, g.id, busy + leader, Tactics.CLIMB_WORK_MIN_W).take(n)) {
             pullers += w
             assign(w, pull(w, intensity))
         }
@@ -511,26 +616,78 @@ class TeamStrategy(
         val minGap = if (v.toGo(leader) <= Tactics.CHASE_ALL_OUT_M) Tactics.CHASE_MIN_GAP_FINALE_S else Tactics.CHASE_MIN_GAP_S
         if (!inFront && g.gapS < minGap) return
         if (inFront && (g.id == v.peloton?.id || g.size > Tactics.SMALL_GROUP)) return
+        // A teammate is in the move ahead: the team doesn't chase him down (its riders sit on, see [mark]).
+        if (!inFront && teammateAhead(v) != null) return
         // In the last km everyone with W′ left empties himself for the leader; before, only the fresh riders chase.
         val allOut = !inFront && v.toGo(leader) <= Tactics.CHASE_ALL_OUT_M
         val helpers = v.teammatesIn(g.id, busy + leader).map { it.riderId }
             .filter { (if (allOut) v.w(it) > Tactics.SPENT_W else !v.spent(it)) && !(kind == FinaleKind.SPRINT && it == roles.sprinter.id) }
-            .take(if (allOut) 3 else 2)
-        val intensity = if (allOut) Tactics.CHASE_PULL_ALL_OUT else Tactics.CHASE_PULL
-        for (h in helpers) assign(h, pull(h, terrain(intensity, v.state(h).distM)))
-        val leaderWorks = g.size <= Tactics.SMALL_GROUP && v.w(leader) > 0.3 && v.toGo(leader) > 1_500.0 &&
+            .take(if (allOut) Tactics.CHASE_HELPERS_ALL_OUT else Tactics.CHASE_HELPERS)
+        for (h in helpers) {
+            val intensity = when {
+                roles.role(h) != Role.DOMESTIQUE -> Tactics.CHASE_PULL_PROTECTED
+                allOut && roles.leader.archetype == Archetype.SPRINTER -> Tactics.CHASE_PULL_ALL_OUT_SPRINTER
+                allOut -> Tactics.CHASE_PULL_ALL_OUT
+                else -> Tactics.CHASE_PULL
+            }
+            assign(h, pull(h, terrain(intensity, v.state(h).distM)))
+        }
+        val leaderWorks = g.size <= Tactics.SMALL_GROUP && v.w(leader) > Tactics.LEADER_WORK_MIN_W && v.toGo(leader) > Tactics.LEADER_PULL_TO_M &&
             (inFront || helpers.isEmpty())
-        val leaderPull = if (v.toGo(leader) <= Tactics.CHASE_ALL_OUT_M) Tactics.LEADER_PULL_FINALE else Tactics.LEADER_PULL
+        val leaderPull = when {
+            inFront && g.size == 1 -> Tactics.LEADER_MOVE_PULL
+            !inFront -> Tactics.LEADER_CHASE_PULL
+            v.toGo(leader) <= Tactics.CHASE_ALL_OUT_M -> Tactics.LEADER_PULL_FINALE
+            else -> Tactics.LEADER_PULL
+        }
         if (leaderWorks && leader !in busy) assign(leader, pull(leader, terrain(leaderPull, v.state(leader).distM)))
     }
 
     /**
-     * 7. Control the break. While the break goes and builds its lead (until the gap first reaches a target that
-     * shrinks towards the finish, or the end of the break window), the strongest teams ride an easy tempo at the
-     * front: a peloton without pullers rides the faster default rotation and would never let a break go. Once the
-     * break is established, one domestique holds the gap in the band (his pull follows the gap, see
-     * [Tactics.CONTROL_HOLD]); above the target they chase until it is back under [Tactics.CONTROL_RELEASE] × target,
-     * and in the last [Tactics.CONTROL_CATCH_KM] km whenever a break is ahead.
+     * In the finale, a contender of the team in a small move at the head of the race (not the peloton): the rider
+     * there, or null.
+     */
+    private fun teammateAhead(v: View): Int? {
+        val head = v.head ?: return null
+        if (head.id == v.peloton?.id || head.size > Tactics.SMALL_GROUP) return null
+        return v.mine.firstOrNull { s ->
+            s.groupId == head.id && s.status.onRoad && roles.role(s.riderId) != Role.DOMESTIQUE &&
+                v.toGo(s.riderId) <= Tactics.CHASE_WINDOW_M
+        }?.riderId
+    }
+
+    /**
+     * 6b. Sitting on in the finale. A contender of the team is in the move ahead: its riders in the groups behind sit
+     * on. Or a move is ahead of the leader's group in the last [Tactics.CHASE_WINDOW_M]: the team's contenders there
+     * don't take turns either (the chase is for the helpers, see [chase]; a group of leaders rides it poorly). Sitting
+     * on is marking the strongest rival of the group, so the rider never takes a turn in the default rotation.
+     */
+    private fun mark(v: View, busy: Set<Int>, assign: (Int, Order) -> Unit) {
+        val ahead = teammateAhead(v)
+        val head = v.head ?: return
+        val aheadGroup = ahead?.let { v.state(it).groupId }
+        for (s in v.mine) {
+            val id = s.riderId
+            if (!v.racing(id) || id in busy || v.spent(id) || s.groupId == head.id) continue
+            val role = roles.role(id)
+            val sitsOn = when {
+                ahead != null -> s.groupId != aheadGroup
+                else -> role != Role.DOMESTIQUE && v.toGo(id) <= Tactics.CHASE_WINDOW_M
+            }
+            if (!sitsOn) continue
+            val rival = v.ridersIn(s.groupId).filter { !ownById.containsKey(it) }
+                .maxByOrNull { publicById[it]?.let { p -> kind.fit(p.ratings) } ?: 0.0 } ?: continue
+            val sitIn = if (role == Role.DOMESTIQUE) Tactics.SIT_IN_MAX_DOMESTIQUE else Tactics.SIT_IN_MAX_PROTECTED
+            assign(id, Order(id, RiderMode.FOLLOW, targetRiderId = rival, maxIntensity = sitIn))
+        }
+    }
+
+    /**
+     * 7. Control the break. While the break goes and builds its lead (until the gap first reaches the target), the
+     * strongest teams ride an easy tempo at the front: a peloton without pullers rides the faster default rotation
+     * and would never let a break go. Once the break is established, one domestique per team holds the gap (his pull
+     * follows the gap, see [Tactics.CONTROL_HOLD]); from [StrategyParams.chaseFromKm] to go they chase it down, harder
+     * when it is still far ahead for the distance left.
      */
     private fun control(v: View, busy: Set<Int>, assign: (Int, Order) -> Unit) {
         if (!controls) return
@@ -540,36 +697,32 @@ class TeamStrategy(
         val breakAhead = !v.pelotonIsHead
         val kmToGo = (finishM - pel.headDistM) / 1000.0
         if (!breakAhead && (breakEstablished || pel.headDistM > Tactics.BREAK_WINDOW_END_M)) {
-            controlling = false
             // No break (caught early, or none went): the strongest teams still ride tempo until the finale, or the
             // peloton rides the faster default rotation for hours and the field explodes.
             if (kmToGo * 1000.0 <= Tactics.FINALE_WINDOW_M) return
             val d = pel.headDistM
-            for (w in workers(v, pel.id, busy + leader + roles.sprinter.id, 0.2).take(Tactics.CONTROL_RIDERS)) {
+            for (w in workers(v, pel.id, busy + leader + roles.sprinter.id, Tactics.WORKER_MIN_W).take(Tactics.CONTROL_RIDERS)) {
                 pullers += w
                 val climbing = gradeAhead(d) >= Tactics.CLIMB_GRADE
                 assign(w, pull(w, if (climbing) min(Tactics.CONTROL_NO_BREAK, Tactics.CONTROL_CLIMB_CAP) else Tactics.CONTROL_NO_BREAK))
             }
             return
         }
-        val target = (Tactics.CONTROL_S_PER_KM * kmToGo).coerceIn(Tactics.CONTROL_MIN_GAP_S, Tactics.CONTROL_MAX_GAP_S)
+        val target = max(Tactics.CONTROL_MIN_GAP_S, maxGapS * min(1.0, kmToGo / Tactics.CONTROL_TAPER_KM))
         val gap = if (breakAhead) pel.gapS else 0.0
-        if (gap > target || (breakAhead && kmToGo < Tactics.CONTROL_CATCH_KM)) controlling = true
-        if (gap > target || pel.headDistM > Tactics.BREAK_WINDOW_END_M) breakEstablished = true
-        if (gap < Tactics.CONTROL_RELEASE * target && kmToGo >= Tactics.CONTROL_CATCH_KM) controlling = false
+        if (gap >= target) breakEstablished = true
+        val chasing = breakAhead && kmToGo <= params.chaseFromKm
         val (n, intensity) = when {
-            controlling -> (if (gap > 1.5 * target || kmToGo < 30.0) 3 else 2) to when {
-                kmToGo > 100.0 -> Tactics.CONTROL_CHASE_EARLY
-                kmToGo > 40.0 -> Tactics.CONTROL_CHASE_MID
-                else -> Tactics.CONTROL_CHASE_LATE
-            }
+            chasing && gap > Tactics.CONTROL_CHASE_HARD_S_PER_KM * kmToGo ->
+                Tactics.CONTROL_CHASE_RIDERS_HARD to Tactics.CONTROL_CHASE_HARD
+            chasing -> Tactics.CONTROL_CHASE_RIDERS to Tactics.CONTROL_CHASE
             !breakEstablished -> Tactics.CONTROL_RIDERS to Tactics.CONTROL_TEMPO
             else -> Tactics.CONTROL_RIDERS to (Tactics.CONTROL_HOLD + Tactics.CONTROL_HOLD_GAIN * (gap / target - Tactics.CONTROL_HOLD_AT))
                 .coerceIn(Tactics.CONTROL_HOLD_MIN, Tactics.CONTROL_HOLD_MAX)
         }
         val d = pel.headDistM
         val finale = finishM - d <= Tactics.FINALE_WINDOW_M
-        for (w in workers(v, pel.id, busy + leader + roles.sprinter.id, 0.2).take(n)) {
+        for (w in workers(v, pel.id, busy + leader + roles.sprinter.id, Tactics.WORKER_MIN_W).take(n)) {
             pullers += w
             val climbing = gradeAhead(d) >= Tactics.CLIMB_GRADE
             assign(w, pull(w, if (finale) terrain(intensity, d) else if (climbing) min(intensity, Tactics.CONTROL_CLIMB_CAP) else intensity))
@@ -601,6 +754,4 @@ class TeamStrategy(
     /** A pull is harder on a climb, like the default rotation: [Tactics.CLIMB_BONUS] more from [Tactics.CLIMB_GRADE]. */
     private fun terrain(intensity: Double, distM: Double) =
         if (gradeAhead(distM) >= Tactics.CLIMB_GRADE) intensity + Tactics.CLIMB_BONUS else intensity
-
-    private var controlling = false
 }

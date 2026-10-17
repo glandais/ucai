@@ -25,6 +25,7 @@ npm run dev          # http://localhost:5173, /api is proxied to http://localhos
 | `npm run typecheck` | `tsc` (no emit) |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
 | `npm run screenshots` | regenerates `docs/screenshots/` (see **Screenshots**) |
+| `npm run measure` | the **Measures** table (`scripts/measure.mjs`, same setup as the screenshots, plus `vite preview`) |
 
 Playback keys: space = play/pause (also with a button focused); on the focused timeline ←/→ = ∓1 min (shift: 10 min), Home/End.
 
@@ -43,30 +44,33 @@ them, start the runner with `--serve` and `npm run dev` as in **Run**, then `npm
 | | |
 |---|---|
 | ![Milano-Sanremo, breakaway](../docs/screenshots/milano-sanremo-breakaway.png) | ![Milano-Sanremo, Poggio](../docs/screenshots/milano-sanremo-last-climb.png) |
-| Milano-Sanremo, breakaway established (camera following the leaders, peloton at +3:21) | Milano-Sanremo, Poggio (profile zoomed on the last 50 km) |
+| Milano-Sanremo, breakaway established (camera following the leaders, peloton at +5:10) | Milano-Sanremo, Poggio (profile zoomed on the last 50 km) |
 | ![Liège-Bastogne-Liège, Roche-aux-Faucons](../docs/screenshots/liege-bastogne-liege-last-climb.png) | ![Il Lombardia, finish](../docs/screenshots/il-lombardia-finish.png) |
-| Liège-Bastogne-Liège, Roche-aux-Faucons, 18 groups | Il Lombardia, just after the winner crossed the line |
+| Liège-Bastogne-Liège, Roche-aux-Faucons, 12 groups | Il Lombardia, just after the winner crossed the line |
 | ![Il Lombardia, results](../docs/screenshots/il-lombardia-results.png) | ![Local file](../docs/screenshots/local-file-liege-bastogne-liege.png) |
-| Il Lombardia, final classification (an all-rounder wins a 5-rider sprint) | `replays/liege-bastogne-liege-42.json.gz` opened as a local file |
+| Il Lombardia, final classification (an all-rounder wins a 6-rider sprint) | `replays/liege-bastogne-liege-42.json.gz` opened as a local file |
 
 Race list: [`race-list.png`](../docs/screenshots/race-list.png).
 
 ## Measures
 
-Headless Chrome (Playwright), 1440×900, AMD Renoir iGPU through ANGLE/GL, kernel and Vite on the same machine.
+Seed-42 replays of the final calibration (batch 5 review), `npm run measure` (`scripts/measure.mjs`): headless Chrome
+(Playwright), 1440×900, AMD Renoir iGPU through ANGLE/GL, kernel, Vite dev server and `vite preview` on the same
+machine. Loading steps are the best of 3, timed in the page with the app's own modules (dev server); opening and
+playback on the production build.
 
 | | Milano-Sanremo | Liège-Bastogne-Liège | Il Lombardia |
 |---|---|---|---|
-| Replay download (gzip on the wire → JSON) | 1.2 MB → 11.1 MB | 1.4 MB → 11.8 MB | 1.3 MB → 11.0 MB |
-| Fetch / gunzip + JSON.parse + decode / `ReplayModel` | 56 / 76 / 10 ms | 72 / 91 / 10 ms | 68 / 77 / 10 ms |
-| Click "Watch replay" → replay view rendered (production build) | 370–420 ms | 330–340 ms | 330 ms |
-| `snapshotAt` (mean over the race) | 86 µs | 14 µs | 60 µs |
-| ×60 playback, production build (10 s of rAF, finale) | 60 fps, p95 16.7 ms | 60 fps, p95 16.8 ms | 60 fps, p95 16.8 ms |
-| ×60 playback, dev server (finale) | 60 fps | 52 fps, p95 33 ms | 51 fps, p95 33 ms |
-| JS heap while playing | 30–60 MB | 30–75 MB | 30–75 MB |
+| Replay download (gzip on the wire → JSON) | 1.1 MB → 10.1 MB | 1.2 MB → 9.6 MB | 1.2 MB → 9.7 MB |
+| Fetch / gunzip + JSON.parse + decode / `ReplayModel` | 52 / 80 / 12 ms | 57 / 57 / 8 ms | 49 / 55 / 10 ms |
+| Click "Watch replay" → replay view rendered (production build) | 416 ms | 350 ms | 307 ms |
+| `snapshotAt` (mean over the race) | 23 µs | 19 µs | 21 µs |
+| ×60 playback, production build (10 s of rAF, finale) | 60 fps, p95 16.8 ms | 60 fps, p95 16.7 ms | 60 fps, p95 16.7 ms |
+| JS heap while playing | 68 MB | 80 MB | 58 MB |
 
-A local `.json.gz` file opens in ≈ 420 ms. With software WebGL (SwiftShader, the headless default) MapLibre alone
-caps playback at 13–17 fps: measure with a real GPU (`--ignore-gpu-blocklist --use-angle=gl-egl`).
+With software WebGL (SwiftShader, the headless default) MapLibre alone caps playback at 13–17 fps: measure with a
+real GPU (`--ignore-gpu-blocklist --use-angle=gl-egl`, as the script does). The batch-4 replays (before the final
+calibration) were 1.2–1.4 MB gzipped, 11–12 MB of JSON.
 
 ## Layout
 
@@ -128,16 +132,21 @@ interface GroupState {
   id: number; riderIds: number[] /* front to back */; size: number;
   headDistM: number; tailDistM: number; headRiderId: number;
   lat: number; lon: number; eleM: number;          // head of the group
-  gapToHeadS: number;   // s since the race leader (the winner once someone finished) passed headDistM
+  gapToHeadS: number;   // s since the head of the race (furthest rider ever) passed headDistM: GroupSummary.gapS
   gapToAheadS: number;  // s since the head of the group ahead passed headDistM
   kmToGo: number;
 }
 ```
 
-Gaps are real time gaps from the frames: the pass time of the reference rider at the group's head distance is
-binary-searched in that rider's (non-decreasing) distances and interpolated between frames.
+Gaps are real time gaps from the frames, the engine's definition (DESIGN §3 "Time gaps"): `gapToHeadS` is how long
+ago the head of the race, the furthest any rider has ever been (a caught break still counts; the winner once someone
+has finished), passed the group's head distance, binary-searched in the per-frame head distances and interpolated
+between frames. `gapToAheadS` uses the passage of the front rider of the group ahead. `replay/engineGaps.test.ts`
+checks the group gaps of a real race against the engine's `GroupSummary.gapS` (fixture written by the runner's
+`GapFixtureTest`: `UCAI_WRITE_FIXTURES=1 ./gradlew :runner:test --tests '*GapFixtureTest*'` after an engine change).
 
-`ReplayModel` also exposes `frameIndexAt(t)`, `distAt(riderIndex, t)` and `passTime(riderIndex, distM)`.
+`ReplayModel` also exposes `frameIndexAt(t)`, `distAt(riderIndex, t)`, `passTime(riderIndex, distM)` and
+`headPassTime(distM, t)`.
 
 `RaceMeta`: `race`, `course` (decoded points `{lat, lon, eleM, distM}`, `climbs`), `teams`, `riders`, `climbs`,
 `teamById`, `riderById`, `riderIndex`. Helpers in `replay/meta.ts`: `teamColor(meta, teamId)`,

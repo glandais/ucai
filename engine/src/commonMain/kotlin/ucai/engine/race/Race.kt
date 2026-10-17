@@ -429,9 +429,15 @@ class Race(
         return max(0.0, f * max(v, PhysicsConstants.MIN_SPEED_FOR_POWER) / PhysicsConstants.ETA)
     }
 
+    /**
+     * Takes turns in the default rotation: a `follow` rider willing to work ([RaceConfig.rotationMinIntensity]) with
+     * W′ left, who is not marking a rider of his own group (a `targetRiderId` in the same group: he sits on that
+     * wheel and does not pull).
+     */
     private fun rotationEligible(r: RiderState) = r.mode == RiderMode.FOLLOW &&
         r.maxIntensity >= config.rotationMinIntensity &&
-        r.wPrimeBal >= config.rotationMinWPrimeFraction * r.wPrimeEff
+        r.wPrimeBal >= config.rotationMinWPrimeFraction * r.wPrimeEff &&
+        target(r)?.group !== r.group
 
     /**
      * Next turn among the riders of the queue matching [eligible]: the leader keeps it until its turn ends. With
@@ -472,11 +478,22 @@ class Race(
 
     /**
      * Shared turns: k riders taking turns at the front each spend 1/k of the time in the wind and recover in the
-     * wheels in between, so at the same effort a turn can be harder, × (1 + [RaceConfig.rotationShareGain] · (1 − 1/k)):
-     * a big organized group rides faster than a pair. The W′ balance keeps it honest (a rider below
-     * [RaceConfig.rotationMinWPrimeFraction] skips turns).
+     * wheels in between, so at the same effort a turn can be harder, × (1 + [RaceConfig.rotationShareGain] · aero ·
+     * (1 − 1/k)): a big organized group rides faster than a pair. The wheels only save the aero part of the effort,
+     * so the gain is weighted by the aero share of the front rider's resistance at the group's speed ([aeroShare]:
+     * ≈ 0.9 on the flat at 45 km/h, ≈ 0.1 on a 7 % climb): on a climb a group rides little faster than one rider.
+     * The W′ balance keeps it honest (a rider below [RaceConfig.rotationMinWPrimeFraction] skips turns).
      */
-    private fun sharedTurns(k: Int): Double = 1.0 + config.rotationShareGain * (1.0 - 1.0 / max(1, k))
+    private fun sharedTurns(k: Int, aero: Double): Double = 1.0 + config.rotationShareGain * aero * (1.0 - 1.0 / max(1, k))
+
+    /** Aero share of the resistance of [r] alone at the front of [g], at the group's speed (1 downhill). */
+    private fun aeroShare(r: RiderState, g: Group): Double {
+        val c = conditions(r, g.bodyDist, 1.0)
+        val v = max(g.bodySpeed, config.rotationRefSpeed)
+        val total = resistiveForce(v, c)
+        if (total <= 0.0) return 1.0
+        return (resistiveForce(v, c) - resistiveForce(0.0, c)).coerceAtLeast(0.0) / total
+    }
 
     private fun paceSetter(g: Group): Pace {
         val q = g.queue
@@ -492,7 +509,7 @@ class Race(
         val elig: (RiderState) -> Boolean = ::rotationEligible
         if (q.any(elig)) {
             val l = turn(g, elig, strongest = true)
-            val intensity = rotationIntensity(g) * sharedTurns(g.rotationSize)
+            val intensity = rotationIntensity(g) * sharedTurns(g.rotationSize, aeroShare(l, g))
             return Pace(l, min(min(intensity, l.maxIntensity) * l.cpNow, l.phys.maxSustainablePower()), elig)
         }
         val l = q.first()

@@ -10,7 +10,9 @@ import ucai.engine.race.RaceView
  * The early break: the real time gap ([RaceView.gapAt], the engine's `GroupSummary.gapS`) of the peloton (the biggest
  * group) behind the head of the race. A spell is a stretch of ticks with a group ahead of the peloton; the early
  * break is the spell that started in the first [windowM] with the largest gap. [caughtKm] is where the peloton was
- * when that spell ended (the course distance if it never did); [breakRiderIds] the head group at its max gap.
+ * when that spell ended, or where the head of the race was when a rider of the peloton (since the max gap) joined
+ * the head group in the last 60 km, a finale where the biggest group is no longer at the front (the course distance if it never
+ * was caught); [breakRiderIds] the head group at its max gap.
  * [leftPelotonKm]: per rider, where he was last seen in the peloton.
  *
  * Also: the share of riders on the road in the peloton when its head first reaches half distance, the highest
@@ -23,6 +25,9 @@ class RaceMetrics(private val windowM: Double = 80_000.0, private val massKg: (I
 
     val spells = mutableListOf<Spell>()
     private var open: Spell? = null
+    /** The open spell was ended by a move from behind: no new spell until the peloton is at the head again. */
+    private var caughtByMove = false
+    private val pelotonSinceMax = HashSet<Int>()
     private var finishKm = 0.0
 
     /** The early break, or null when no group ever got away in the window. */
@@ -70,8 +75,19 @@ class RaceMetrics(private val windowM: Double = 80_000.0, private val massKg: (I
     fun best60WKg(id: Int): Double = best60W(id) / massKg(id)
     val riderIds: Set<Int> get() = p20.keys
 
+    /** Head of the race at 10, 5 and 2 km to go: its size and its lead on the next group (s). */
+    val headAt = LinkedHashMap<Int, Pair<Int, Double>>()
+
     override fun onTick(race: RaceView, events: List<RaceEvent>) {
         finishKm = race.course.distanceM / 1000.0
+        race.groups.firstOrNull()?.let { h ->
+            for (km in intArrayOf(10, 5, 2)) {
+                if (km !in headAt && race.course.distanceM - h.headDistM <= km * 1000.0) {
+                    val next = race.groups.getOrNull(1)
+                    headAt[km] = h.size to (next?.let { race.gapAt(it.headDistM) - race.gapAt(h.headDistM) } ?: 0.0)
+                }
+            }
+        }
         for (r in race.riders) {
             if (r.finishTimeS != null || !r.status.onRoad) continue
             p20.getOrPut(r.id) { Rolling(20 * 60) }.add(r.power)
@@ -95,16 +111,35 @@ class RaceMetrics(private val windowM: Double = 80_000.0, private val massKg: (I
         if (head === pel || head.headDistM <= pel.headDistM) {
             open?.caughtKm = pelKm
             open = null
+            caughtByMove = false
             return
         }
+        // In the finale (last FINALE_M) the biggest group is often a group behind the race: the break is caught once a rider seen
+        // in the peloton since the break's max gap is in the head group (the move that caught it).
+        open?.let { o ->
+            val finale = race.course.distanceM - head.headDistM <= FINALE_M
+            if (finale && o.riderIds.isNotEmpty() && head.riderIds.any { it in pelotonSinceMax }) {
+                o.caughtKm = head.headDistM / 1000.0
+                open = null
+                caughtByMove = true
+                return
+            }
+        }
+        if (caughtByMove) return
         val gap = race.gapAt(pel.headDistM)
-        val s = open ?: Spell(pelKm).also { spells += it; open = it }
+        val s = open ?: Spell(pelKm).also { spells += it; open = it; pelotonSinceMax.clear() }
         // Once the field is in pieces (finale) the biggest group is no longer "the peloton": no gap sample.
         val racing = race.riders.count { it.finishTimeS == null }
         if (pel.size * 3 >= racing && gap > s.maxGapS) {
             s.maxGapS = gap
             s.maxGapKm = pelKm
             s.riderIds = head.riderIds.toList()
+            pelotonSinceMax.clear()
         }
+        pelotonSinceMax += pel.riderIds
+    }
+
+    private companion object {
+        const val FINALE_M = 60_000.0
     }
 }

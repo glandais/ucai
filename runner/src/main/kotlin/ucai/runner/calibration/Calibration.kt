@@ -23,6 +23,7 @@ import ucai.kernel.decimatedDetail
 import ucai.kernel.raceSeed
 import ucai.team.strategy.Role
 import ucai.team.strategy.StrategyParams
+import ucai.team.strategy.Tactics
 import ucai.team.strategy.TeamStrategy
 import java.io.File
 import java.util.Locale
@@ -39,16 +40,22 @@ object Calibration {
 
     /**
      * Team configs for a race, seeded: 3 or 4 teams send a rider in the early break, aggressiveness in
-     * [0.3, 0.9]; control is left to each strategy (the 3 teams whose leader looks strongest).
+     * [0.3, 0.9]; control is left to each strategy (the 3 teams whose leader looks strongest). Race-level draws, the
+     * same for every team: the most the controlling teams let the break have, and where they start chasing it down.
      */
     fun teamParams(seed: Long, teamIds: List<String>): Map<String, StrategyParams> {
         val rnd = Random(seed * 31 + 7)
         val breakTeams = teamIds.shuffled(rnd).take(3 + rnd.nextInt(2)).toSet()
+        val aggressiveness = teamIds.map { rnd.nextDouble(0.3, 0.9) }
+        val breakGapS = rnd.nextDouble(Tactics.CONTROL_GAP_MIN_S, Tactics.CONTROL_GAP_MAX_S)
+        val chaseFromKm = rnd.nextDouble(Tactics.CHASE_FROM_MIN_KM, Tactics.CHASE_FROM_MAX_KM)
         return teamIds.withIndex().associate { (i, id) ->
             id to StrategyParams(
-                aggressiveness = rnd.nextDouble(0.3, 0.9),
+                aggressiveness = aggressiveness[i],
                 breakaway = id in breakTeams,
                 seed = seed * 1_000 + i,
+                breakGapS = breakGapS,
+                chaseFromKm = chaseFromKm,
             )
         }
     }
@@ -71,7 +78,8 @@ object Calibration {
         val seed: Long,
         val field: Field,
         val race: Race,
-        val replay: Replay,
+        /** Null when the run was made without recording (`record = false`). */
+        val replayOrNull: Replay?,
         val strategies: Map<String, TeamStrategy>,
         val rejected: List<RejectedOrder>,
         val decisions: Int,
@@ -79,6 +87,8 @@ object Calibration {
         val simMillis: Long,
         val breakaway: RaceMetrics,
     ) {
+        val replay: Replay get() = checkNotNull(replayOrNull) { "run made without a replay" }
+
         /** Gaps (s) of the finishers behind the winner. */
         val finishGaps: List<Double> get() = race.results().mapNotNull { it.gapS }
         val lastGapS: Double get() = finishGaps.maxOrNull() ?: 0.0
@@ -95,13 +105,14 @@ object Calibration {
         config: RaceConfig = RaceConfig(),
         observer: RaceObserver? = null,
         secret: String? = null,
+        record: Boolean = true,
     ): Run {
         val t0 = System.nanoTime()
         val field = field(seed, secret)
         val entrants = field.riders.map { RaceEntrant(it.id, it.teamId, it.profile) }
         val race = Race(course, entrants, secret?.let { raceSeed(seed, it) } ?: seed, config = config)
-        val recorder = ReplayRecorder()
-        race.addObserver(recorder)
+        val recorder = if (record) ReplayRecorder() else null
+        recorder?.let { race.addObserver(it) }
         val breakaway = RaceMetrics { id -> field.rider(id)!!.profile.massKg }
         race.addObserver(breakaway)
         observer?.let { race.addObserver(it) }
@@ -136,7 +147,7 @@ object Calibration {
             clock = ClockConfig(ClockMode.LOCKSTEP), teams = field.teamInfos, riders = field.publicRiders(),
             tick = race.tick, seed = seed,
         )
-        val replay = recorder.replay(detail, race)
+        val replay = recorder?.replay(detail, race)
         return Run(course, seed, field, race, replay, strategies, rejected, decisions, sent, simMillis, breakaway)
     }
 
@@ -185,6 +196,9 @@ object Calibration {
             "CP lost leaders ${runs.joinToString("/") { f(Score.cpLostPct(it, Role.LEADER)) }} %, domestiques ${runs.joinToString("/") { f(Score.cpLostPct(it, Role.DOMESTIQUE)) }} %, " +
             "max ${runs.joinToString("/") { i(it.breakaway.maxSpeed * 3.6) }} km/h, best 20 min ${runs.joinToString("/") { r -> f(r.breakaway.riderIds.maxOf { r.breakaway.best20WKg(it) }) }} W/kg, " +
             "favourite won ${runs.count { Score.favouriteRank(it) == 1 }}/${runs.size}\n" +
+            "    winner margin ${runs.joinToString("/") { i(Score.winnerMarginS(it)) }} s, winning group ${runs.joinToString("/") { "${Score.winningGroupSize(it)}" }}, " +
+            "head at 10/5/2 km ${runs.joinToString(" ") { r -> r.breakaway.headAt.values.joinToString("/") { "${it.first}@${i(it.second)}" } }}, " +
+            "break caught at km to go ${runs.joinToString("/") { if (Score.breakWon(it)) "won" else i(it.course.distanceM / 1000 - it.breakaway.caughtKm) }}\n" +
             Score.courseReport(runs)
     }
 
@@ -268,7 +282,7 @@ object Calibration {
         sb.appendLine("  " + Score.describe(Score.race(r), Score.raceTerms(r)))
         sb.appendLine(
             "  run         ${r.simMillis} ms, ${r.race.tick} ticks, ${r.decisions} decisions, ${r.ordersSent} orders, " +
-                "${r.rejected.size} rejected, ${r.replay.frames.size} frames",
+                "${r.rejected.size} rejected, ${r.replayOrNull?.frames?.size ?: 0} frames",
         )
         if (r.rejected.isNotEmpty()) sb.appendLine("  REJECTED    ${r.rejected.take(5)}")
         return sb.toString()

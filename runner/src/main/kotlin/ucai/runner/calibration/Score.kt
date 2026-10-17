@@ -44,16 +44,37 @@ object Score {
         val acceptable: Set<Archetype>,
         /** Largest gap inside the top 10 (s). */
         val top10GapS: ClosedFloatingPointRange<Double>,
+        /** Gap from the winner to 2nd (s): the hilly monuments are usually won solo or from a small group. */
+        val winnerMarginS: ClosedFloatingPointRange<Double>,
+        /**
+         * Share of the seeds decided by a front group of at most [selectiveGroup] riders (the winner's group at the
+         * line, by group time), so a course that ends the same way every year scores worse.
+         */
+        val selectiveGroup: Int,
+        val selectiveShare: ClosedFloatingPointRange<Double>,
     )
 
     private val HILLY_TOP10 = 5.0..120.0
+    /** Real LBL and Lombardia: mostly solo, else 2–5 riders; a margin of a few seconds to a minute and a half. */
+    private val HILLY_MARGIN = 3.0..90.0
+    private val ANY_MARGIN = 0.0..Double.MAX_VALUE
 
     fun targets(courseId: String): Targets = when (courseId) {
-        "milano-sanremo" -> Targets(40.0..44.0, setOf(Archetype.SPRINTER, Archetype.PUNCHEUR), setOf(Archetype.ALL_ROUNDER, Archetype.ROULEUR), 0.0..120.0)
-        "liege-bastogne-liege" -> Targets(39.0..42.0, setOf(Archetype.PUNCHEUR), setOf(Archetype.CLIMBER, Archetype.ALL_ROUNDER), HILLY_TOP10)
-        "il-lombardia" -> Targets(39.0..42.0, setOf(Archetype.CLIMBER), setOf(Archetype.PUNCHEUR, Archetype.ALL_ROUNDER), HILLY_TOP10)
-        else -> Targets(38.0..44.0, Archetype.entries.toSet(), emptySet(), 0.0..120.0)
+        // Sanremo: a bunch sprint most years, a Poggio move (5 riders or fewer) in some (2019, 2021–2023, 2025).
+        "milano-sanremo" -> Targets(40.0..44.0, setOf(Archetype.SPRINTER, Archetype.PUNCHEUR), setOf(Archetype.ALL_ROUNDER, Archetype.ROULEUR), 0.0..120.0, ANY_MARGIN, 5, 0.2..0.5)
+        "liege-bastogne-liege" -> Targets(39.0..42.0, setOf(Archetype.PUNCHEUR), setOf(Archetype.CLIMBER, Archetype.ALL_ROUNDER), HILLY_TOP10, HILLY_MARGIN, 3, 0.3..1.0)
+        "il-lombardia" -> Targets(39.0..42.0, setOf(Archetype.CLIMBER), setOf(Archetype.PUNCHEUR, Archetype.ALL_ROUNDER), HILLY_TOP10, HILLY_MARGIN, 3, 0.3..1.0)
+        else -> Targets(38.0..44.0, Archetype.entries.toSet(), emptySet(), 0.0..120.0, ANY_MARGIN, 70, 0.0..1.0)
     }
+
+    /** Gap from the winner to 2nd at the line (s). */
+    fun winnerMarginS(r: Calibration.Run): Double = r.race.results().getOrNull(1)?.gapS ?: 0.0
+
+    /** Riders who finished with the winner's time (1 = won solo). */
+    fun winningGroupSize(r: Calibration.Run): Int = r.race.results().count { it.position != null && it.gapS == 0.0 }
+
+    /** Was the race decided by a front group of at most the course's [Targets.selectiveGroup] riders? */
+    fun selective(r: Calibration.Run): Boolean = winningGroupSize(r) <= targets(r.course.id).selectiveGroup
 
     /** Was the race won from the early break (the winner was in it and it was never caught before the last km)? */
     fun breakWon(r: Calibration.Run): Boolean {
@@ -95,6 +116,7 @@ object Score {
             Term("breakGap", m.maxGapS, 180.0, 600.0, 60.0, 180.0, weight = 2.0),
             Term("caughtToGo", caughtToGo, 5.0, 60.0, 20.0, weight = 2.0),
             Term("top10Gap", top10, t.top10GapS.start, t.top10GapS.endInclusive, 5.0, 60.0, weight = 2.0),
+            Term("winnerMargin", winnerMarginS(r), t.winnerMarginS.start, t.winnerMarginS.endInclusive, 3.0, 60.0),
             Term("pelotonAtHalf", atHalf, 0.75, 1.0, 0.1, weight = 2.0),
             Term("lastFinisherMin", r.lastGapS / 60, 0.0, 15.0, 10.0),
             Term("over20min", r.downBy(20).toDouble(), 0.0, 2.0, 4.0),
@@ -118,15 +140,22 @@ object Score {
 
     fun courseTerms(runs: List<Calibration.Run>): List<Term> {
         if (runs.isEmpty()) return emptyList()
-        return courseTerms(runs.count { breakWon(it) }.toDouble() / runs.size, runs.count { favouriteRank(it) == 1 }.toDouble() / runs.size)
+        val n = runs.size.toDouble()
+        return courseTerms(
+            runs.first().course.id, runs.count { breakWon(it) } / n, runs.count { favouriteRank(it) == 1 } / n,
+            runs.count { selective(it) } / n,
+        )
     }
 
-    /** Course terms from the share of seeds won from the early break and by the favourite. */
-    fun courseTerms(breakWins: Double, favourite: Double): List<Term> =
-        listOf(
+    /** Course terms from the share of seeds won from the early break, by the favourite, and by a small group. */
+    fun courseTerms(courseId: String, breakWins: Double, favourite: Double, selective: Double): List<Term> {
+        val t = targets(courseId)
+        return listOf(
             Term("breakWinShare", breakWins, 0.0, 0.2, 0.15, weight = 2.0),
             Term("favouriteWinShare", favourite, 0.0, 0.5, 0.25),
+            Term("selectiveShare", selective, t.selectiveShare.start, t.selectiveShare.endInclusive, 0.15),
         )
+    }
 
     fun race(r: Calibration.Run): Double = raceTerms(r).sumOf { it.penalty }
 

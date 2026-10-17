@@ -12,6 +12,8 @@ import java.util.Locale
 class Trace(
     private val stepM: Double = 10_000.0,
     private val watch: Set<Int> = emptySet(),
+    /** In the last [headRidersM], each line also lists the riders of the first 2 groups (mode, power, W′). */
+    private val headRidersM: Double = 0.0,
     private val cp: (Int) -> Double,
 ) : RaceObserver {
     private val sb = StringBuilder()
@@ -57,6 +59,16 @@ class Trace(
                 Locale.ROOT, head.distM / 1000, fmt(t), kmh, groups, fr,
             ),
         )
+        if (race.course.distanceM - head.distM <= headRidersM) {
+            for (g in race.groups.take(2)) {
+                sb.appendLine(
+                    "      ${g.size}@${"%.0f".format(Locale.ROOT, race.gapAt(g.headDistM))}: " + g.riderIds.take(12).joinToString(" ") { id ->
+                        val r = byId.getValue(id)
+                        "#$id ${r.mode.name.take(2).lowercase()}${"%.0f".format(Locale.ROOT, r.power)}/${"%.2f".format(Locale.ROOT, r.wPrimeBal / r.wPrimeEff.coerceAtLeast(1.0))}"
+                    },
+                )
+            }
+        }
         for (id in watch) {
             val r = byId[id] ?: continue
             val g = race.groups.firstOrNull { id in it.riderIds }

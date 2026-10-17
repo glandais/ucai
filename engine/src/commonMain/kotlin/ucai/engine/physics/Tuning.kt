@@ -16,7 +16,11 @@ object Tuning {
     const val ROTATION_CLIMB_GRADIENT = 0.03
     /** Share of the rotation (the strongest at the front on the current terrain) that takes turns. */
     const val ROTATION_SHARE = 0.5
-    /** Turns shared by k riders are harder by × (1 + gain · (1 − 1/k)): a big organized group is faster than a pair. */
+    /**
+     * Turns shared by k riders are harder by × (1 + gain · aero · (1 − 1/k)): a big organized group is faster than a
+     * pair. `aero` is the aero share of the front rider's resistance: the wheels only save that part, so on a climb a
+     * group rides little faster than one rider (without it, groups climbed at 1.3 × CP until their W′ ran out).
+     */
     const val ROTATION_SHARE_GAIN = 0.2
     /** A `follow` rider with a lower `maxIntensity` sits in and never takes turns. */
     const val ROTATION_MIN_INTENSITY = 0.9
@@ -44,6 +48,14 @@ object Tuning {
     /** Gradient where the uphill gain starts, and where it is full. */
     const val UPHILL_FROM_GRADIENT = 0.02
     const val UPHILL_FULL_GRADIENT = 0.06
+
+    // --- Rolling resistance (Physics.resistiveForce) ---
+    /**
+     * Rolling resistance of race tyres (25–28 mm, high pressure) on good asphalt: drum tests give 0.0025–0.003,
+     * field coast-downs about 0.0032 (Martin et al. 1998). Was 0.004 (a training tyre on a rough road) until the
+     * final calibration pass.
+     */
+    const val CRR = 0.0032
 
     // --- Riders out of the race ---
     /** Pace of a `recover` rider alone, fraction of cpEff (batch 1: 0.55). */

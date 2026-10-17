@@ -39,7 +39,8 @@ export interface GroupState {
   lon: number;
   eleM: number;
   /**
-   * Time gap to the head of the race, s: how long ago the race leader (the winner once someone has
+   * Time gap to the head of the race, s, the engine's `GroupSummary.gapS`: how long ago the head of the race
+   * (the furthest any rider has ever been, so a caught break still counts, and the winner once someone has
    * finished) passed `headDistM`. 0 for the leading group while nobody has finished.
    */
   gapToHeadS: number;

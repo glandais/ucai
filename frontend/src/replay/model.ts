@@ -24,6 +24,8 @@ export class ReplayModel implements RaceSource {
   private readonly speed: Float32Array;
   private readonly group: Int32Array;
   private readonly rank: Int32Array;
+  /** Head of the race per frame: the furthest any rider has ever been (running max, finished riders included). */
+  private readonly headDist: Float64Array;
   private eventsCache: { count: number; list: readonly RaceEvent[] } = { count: 0, list: [] };
 
   constructor(replay: Replay) {
@@ -53,6 +55,38 @@ export class ReplayModel implements RaceSource {
     });
     this.startT = this.times[0]!;
     this.endT = this.times[F - 1]!;
+    this.headDist = new Float64Array(F);
+    let head = 0;
+    for (let k = 0; k < F; k++) {
+      const base = k * R;
+      for (let i = 0; i < R; i++) head = Math.max(head, this.dist[base + i]!);
+      this.headDist[k] = head;
+    }
+  }
+
+  /**
+   * Race time at which the head of the race (the furthest rider ever, like the engine's `PassTimes`) first reached
+   * distance `d`, linear between frames; `null` if it has not by time `t` (the group at `d` leads the race).
+   */
+  headPassTime(d: number, t: number): number | null {
+    const hd = this.headDist;
+    const k = this.frameIndexAt(t);
+    const headNow = k >= this.frameCount - 1 ? hd[k]! : hd[k]! + (hd[k + 1]! - hd[k]!) * this.alpha(k, t);
+    if (d >= headNow) return null;
+    if (d <= hd[0]!) return this.times[0]!;
+    // First frame whose head is at or beyond d (headDist is non-decreasing): invariant hd[lo] < d <= hd[hi].
+    let lo = 0;
+    let hi = k + 1 < this.frameCount ? k + 1 : k;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (hd[mid]! >= d) hi = mid;
+      else lo = mid;
+    }
+    const h0 = hd[lo]!;
+    const h1 = hd[hi]!;
+    const t0 = this.times[lo]!;
+    const t1 = this.times[hi]!;
+    return h1 <= h0 ? t1 : t0 + ((d - h0) / (h1 - h0)) * (t1 - t0);
   }
 
   subscribe(): () => void {
@@ -190,16 +224,16 @@ export class ReplayModel implements RaceSource {
     }
     groups.sort((x, y) => y.headDistM - x.headDistM || x.id - y.id);
 
-    // Time gaps: when did the reference rider pass the head of this group?
+    // Time gaps, the engine's `GroupSummary.gapS` (DESIGN §3 "Time gaps"): how long ago the head of the race (the
+    // furthest rider ever, so after the winner's finish the winner) passed the front of this group. To the group
+    // ahead: how long ago that group's front rider passed it.
     const gapBehind = (refIndex: number, d: number): number => {
       const tp = this.passTime(refIndex, d);
       return tp === null ? 0 : Math.max(0, t - tp);
     };
-    const winner = finished[0];
-    const headRef = winner ? winner.index : groups[0] ? this.meta.riderIndex.get(groups[0].headRiderId)! : -1;
     groups.forEach((g, gi) => {
-      const ownHead = this.meta.riderIndex.get(g.headRiderId)!;
-      g.gapToHeadS = headRef < 0 || headRef === ownHead ? 0 : gapBehind(headRef, g.headDistM);
+      const tp = this.headPassTime(g.headDistM, t);
+      g.gapToHeadS = tp === null ? 0 : Math.max(0, t - tp);
       const ahead = groups[gi - 1];
       g.gapToAheadS = ahead ? gapBehind(this.meta.riderIndex.get(ahead.headRiderId)!, g.headDistM) : g.gapToHeadS;
     });
