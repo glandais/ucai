@@ -99,6 +99,8 @@ Import pipeline (run once, output committed in `races/courses/<id>.json`):
    - GPX: a short hand-written list per course (Cipressa, Poggio, Sormano, Passo di Ganda…) with start/end km.
 7. Course metadata: id, name, distance, total elevation gain, start/finish names.
 
+**Track accuracy (checked against OSM, not map-matched).** The 10 m courses were map-matched once on Valhalla (`trace_route`, `map_snap`, costing `auto` with `ignore_oneways`, `ignore_restrictions`, `ignore_access` and `ignore_closures`: races ride roundabouts and one-way streets against the traffic, and without them the match stops after a few hundred meters), 20 km chunks overlapping by 1 km. Distance from each course point to the OSM road: Sanremo p50 0.4 m, p95 1.1 m, max 14 m; Lombardia p50 0.5 m, p95 1.6 m, max 16 m; LBL p50 0.9 m, p95 4.3 m, max 22 m (the KML is smoothed to 35 m: some bends rounder or 10–20 m to the side over a few hundred meters). The worst spots are roundabouts taken on the other side, no cut hairpin; Lombardia km 152.6–154.0 (lakeside near Lecco) does not match with `auto` costing, the source is regular there. So the sources are kept: rematching them would gain a few meters on roundabouts for a recalibration. Hairpins looked cut on the map because the public course kept one point every 50 m (up to 13 m off on Civiglio); the map now draws `track` (§4, `GET /courses/{courseId}`).
+
 ```json
 { "id": "milano-sanremo", "name": "Milano-Sanremo", "distanceM": 298700,
   "points": [[lat, lon, eleM, distM], ...],
