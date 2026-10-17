@@ -24,6 +24,7 @@ npm run dev          # http://localhost:5173, /api is proxied to http://localhos
 | `npm run build` | typecheck + production build into `dist/` |
 | `npm run typecheck` | `tsc` (no emit) |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
+| `npm run screenshots` | regenerates `docs/screenshots/` (see **Screenshots**) |
 
 Playback keys: space = play/pause (also with a button focused); on the focused timeline ←/→ = ∓1 min (shift: 10 min), Home/End.
 
@@ -34,16 +35,19 @@ from the line, groups behind the window are counted at its left edge.
 
 ## Screenshots
 
-Seed 42 replays from the runner, 1440×900, served by the kernel (`--serve`) through the Vite proxy.
+Seed 42 replays from the runner, 1440×900, served by the kernel (`--serve`) through the Vite proxy. To regenerate
+them, start the runner with `--serve` and `npm run dev` as in **Run**, then `npm run screenshots`
+(`scripts/screenshots.mjs`: headless Chrome through `playwright-core`, `CHROME=/path/to/chrome` if it is not
+`/usr/bin/google-chrome`; it reads `replays/*-42.json.gz` to find the moments and writes `docs/screenshots/`).
 
 | | |
 |---|---|
 | ![Milano-Sanremo, breakaway](../docs/screenshots/milano-sanremo-breakaway.png) | ![Milano-Sanremo, Poggio](../docs/screenshots/milano-sanremo-last-climb.png) |
-| Milano-Sanremo, breakaway established (camera following the leaders, peloton at +3:09) | Milano-Sanremo, Poggio (profile zoomed on the last 50 km) |
+| Milano-Sanremo, breakaway established (camera following the leaders, peloton at +3:21) | Milano-Sanremo, Poggio (profile zoomed on the last 50 km) |
 | ![Liège-Bastogne-Liège, Roche-aux-Faucons](../docs/screenshots/liege-bastogne-liege-last-climb.png) | ![Il Lombardia, finish](../docs/screenshots/il-lombardia-finish.png) |
-| Liège-Bastogne-Liège, Roche-aux-Faucons, 15 groups | Il Lombardia, just after the winner crossed the line |
+| Liège-Bastogne-Liège, Roche-aux-Faucons, 18 groups | Il Lombardia, just after the winner crossed the line |
 | ![Il Lombardia, results](../docs/screenshots/il-lombardia-results.png) | ![Local file](../docs/screenshots/local-file-liege-bastogne-liege.png) |
-| Il Lombardia, final classification | `replays/liege-bastogne-liege-42.json.gz` opened as a local file |
+| Il Lombardia, final classification (an all-rounder wins a 5-rider sprint) | `replays/liege-bastogne-liege-42.json.gz` opened as a local file |
 
 Race list: [`race-list.png`](../docs/screenshots/race-list.png).
 
