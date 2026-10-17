@@ -25,6 +25,8 @@ data class RaceConfig(
     val rotationMinIntensity: Double = Tuning.ROTATION_MIN_INTENSITY,
     /** Share of the rotation members (the strongest at the front on the current terrain) that take turns. */
     val rotationShare: Double = Tuning.ROTATION_SHARE,
+    /** Turns shared by k riders of the default rotation are harder by × (1 + gain · (1 − 1/k)). */
+    val rotationShareGain: Double = Tuning.ROTATION_SHARE_GAIN,
     /** Reference speed (m/s) for ranking the rotation when the group is slower (start, steep ramps). */
     val rotationRefSpeed: Double = 5.0,
     /** A rotation member whose W′bal is below this fraction of wPrimeEff skips turns. */

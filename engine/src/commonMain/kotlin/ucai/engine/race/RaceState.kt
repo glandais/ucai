@@ -86,6 +86,8 @@ internal class Group(override val id: Int) : GroupView {
     var newBodySpeed = 0.0
     var leader: RiderState? = null
     var turnEndsTick = 0
+    /** Riders taking turns in the default rotation, as of the last turn change. */
+    var rotationSize = 1
     var bodyGapTicks = 0
 
     /** Members front first: detached ahead, then the body in rank order, then detached behind. */

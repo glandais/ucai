@@ -16,12 +16,17 @@ object Tuning {
     const val ROTATION_CLIMB_GRADIENT = 0.03
     /** Share of the rotation (the strongest at the front on the current terrain) that takes turns. */
     const val ROTATION_SHARE = 0.5
+    /** Turns shared by k riders are harder by × (1 + gain · (1 − 1/k)): a big organized group is faster than a pair. */
+    const val ROTATION_SHARE_GAIN = 0.2
     /** A `follow` rider with a lower `maxIntensity` sits in and never takes turns. */
     const val ROTATION_MIN_INTENSITY = 0.9
 
     // --- Drafting (draftFactor) ---
-    /** Aero drag the riders behind take off the front rider in a big group (Blocken et al.: a few %). */
-    const val FRONT_SHELTER = 0.05
+    /**
+     * Aero drag the riders behind take off the front rider of a big group: ≈ 2.6 % with one rider behind (Blocken
+     * 2013), ≈ 5 % in a line of 4 (team pursuit, Barry 2015). With [FRONT_SHELTER_RIDERS] = 3 a group of 4 gets 5 %.
+     */
+    const val FRONT_SHELTER = 0.08
     /** Group size scale of the front shelter (riders behind). */
     const val FRONT_SHELTER_RIDERS = 3.0
     /** Draft floor deep in a tiny group and in a large peloton (fraction of the solo aero drag). */
@@ -34,7 +39,7 @@ object Tuning {
 
     // --- Terrain (Fatigue.terrainFactor) ---
     /** Extra power a rider sustains on a climb, fraction of cpEff (0 = same as on the flat). */
-    const val UPHILL_POWER_GAIN = 0.08
+    const val UPHILL_POWER_GAIN = 0.10
     /** Gradient where the uphill gain starts, and where it is full. */
     const val UPHILL_FROM_GRADIENT = 0.02
     const val UPHILL_FULL_GRADIENT = 0.06

@@ -58,12 +58,15 @@ class ReplayRecorderTest {
         assertEquals(ticks.sorted().distinct(), ticks, "strictly increasing")
 
         val attack = replay.events.filterIsInstance<RaceEvent.Attack>().single()
-        // Head of race within 3 km of the finish: first tick where the leader is past 17 km. The step into that
-        // frame was still coarse (the head was short of 17 km at the tick before), so 1 s steps start after it.
-        val fineFrom = replay.frames.first { f -> f.r.maxOf { it.distM } >= 17_000.0 }.t
+        // Head of race within 3 km of the finish: 1 s steps once the leader is past 17 km. Frames keep distances to
+        // 0.1 m, so the frame where the head crosses is ambiguous, and the step into it may still be coarse: the
+        // frames up to the first one clearly past the mark are not checked.
+        val mark = race.course.distanceM - 3_000.0
+        val crossFrom = replay.frames.first { f -> f.r.maxOf { it.distM } >= mark - 0.05 }.t
+        val fineFrom = replay.frames.first { f -> f.r.maxOf { it.distM } >= mark + 0.05 }.t
         for ((a, b) in ticks.zipWithNext()) {
             val fine = b in (attack.tick + 1)..(attack.tick + 60) || b > fineFrom
-            if (b == ticks.last()) continue
+            if (b == ticks.last() || b in crossFrom..fineFrom) continue
             if (fine) assertEquals(1, b - a, "1 s step at $b") else {
                 assertEquals(0, b % 5, "coarse frames on multiples of 5 s ($b)")
                 assertTrue(b - a in 1..5, "coarse step at $b")

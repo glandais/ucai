@@ -70,7 +70,7 @@ class FatigueTest {
         assertEquals(1.0, Fatigue.terrainFactor(-0.08))
         assertEquals(1.0 + Tuning.UPHILL_POWER_GAIN, Fatigue.terrainFactor(0.09), 1e-9)
         assertTrue(Fatigue.terrainFactor(0.04) in 1.0..(1.0 + Tuning.UPHILL_POWER_GAIN))
-        assertTrue(Tuning.UPHILL_POWER_GAIN in 0.0..0.1, "3–8 % in the literature")
+        assertTrue(Tuning.UPHILL_POWER_GAIN in 0.0..0.1, "a few % to ~10 % in the literature")
 
         val flat = rider()
         val climb = rider().apply { terrainFactor = Fatigue.terrainFactor(0.07) }

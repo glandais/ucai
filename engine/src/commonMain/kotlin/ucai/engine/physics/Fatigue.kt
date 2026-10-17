@@ -59,7 +59,7 @@ object Fatigue {
 
     /**
      * Uphill, riders hold more power than on the flat for the same effort (lower speed and inertia, more torque per
-     * pedal stroke: field and lab studies find 3–8 % more uphill). 1 below [Tuning.UPHILL_FROM_GRADIENT], rising
+     * pedal stroke: field and lab studies find a few % to ~10 % more uphill). 1 below [Tuning.UPHILL_FROM_GRADIENT], rising
      * linearly to 1 + [Tuning.UPHILL_POWER_GAIN] at [Tuning.UPHILL_FULL_GRADIENT].
      */
     fun terrainFactor(gradient: Double): Double {

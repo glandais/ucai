@@ -453,13 +453,13 @@ class Race(
      */
     private fun strongHalf(g: Group, eligible: (RiderState) -> Boolean): Set<RiderState> {
         val cand = g.queue.filter(eligible)
-        if (cand.size <= 2) return cand.toSet()
+        if (cand.size <= 2) return cand.toSet().also { g.rotationSize = it.size }
         val vRef = max(g.bodySpeed, config.rotationRefSpeed)
         val ranked = cand.sortedByDescending { r ->
             r.cpNow / max(1.0, powerAtSpeed(vRef, conditions(r, g.bodyDist, 1.0)))
         }
         val n = max(2, ceil(cand.size * config.rotationShare).toInt())
-        return ranked.take(n).toSet()
+        return ranked.take(n).toSet().also { g.rotationSize = it.size }
     }
 
     /** Default rotation intensity: harder on climbs (a 10–30 min climb is ridden near the 20-min power, above CP). */
@@ -467,6 +467,14 @@ class Race(
         if (course.gradientAt(g.bodyDist) >= config.climbGradient) config.climbIntensity else config.defaultIntensity
 
     private class Pace(val leader: RiderState, val power: Double, val setter: (RiderState) -> Boolean)
+
+    /**
+     * Shared turns: k riders taking turns at the front each spend 1/k of the time in the wind and recover in the
+     * wheels in between, so at the same effort a turn can be harder, × (1 + [RaceConfig.rotationShareGain] · (1 − 1/k)):
+     * a big organized group rides faster than a pair. The W′ balance keeps it honest (a rider below
+     * [RaceConfig.rotationMinWPrimeFraction] skips turns).
+     */
+    private fun sharedTurns(k: Int): Double = 1.0 + config.rotationShareGain * (1.0 - 1.0 / max(1, k))
 
     private fun paceSetter(g: Group): Pace {
         val q = g.queue
@@ -482,7 +490,8 @@ class Race(
         val elig: (RiderState) -> Boolean = ::rotationEligible
         if (q.any(elig)) {
             val l = turn(g, elig, strongest = true)
-            return Pace(l, min(min(rotationIntensity(g), l.maxIntensity) * l.cpNow, l.phys.maxSustainablePower()), elig)
+            val intensity = rotationIntensity(g) * sharedTurns(g.rotationSize)
+            return Pace(l, min(min(intensity, l.maxIntensity) * l.cpNow, l.phys.maxSustainablePower()), elig)
         }
         val l = q.first()
         g.leader = l
