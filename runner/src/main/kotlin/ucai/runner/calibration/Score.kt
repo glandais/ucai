@@ -118,13 +118,15 @@ object Score {
 
     fun courseTerms(runs: List<Calibration.Run>): List<Term> {
         if (runs.isEmpty()) return emptyList()
-        val breakWins = runs.count { breakWon(it) }.toDouble() / runs.size
-        val favourite = runs.count { favouriteRank(it) == 1 }.toDouble() / runs.size
-        return listOf(
+        return courseTerms(runs.count { breakWon(it) }.toDouble() / runs.size, runs.count { favouriteRank(it) == 1 }.toDouble() / runs.size)
+    }
+
+    /** Course terms from the share of seeds won from the early break and by the favourite. */
+    fun courseTerms(breakWins: Double, favourite: Double): List<Term> =
+        listOf(
             Term("breakWinShare", breakWins, 0.0, 0.2, 0.15, weight = 2.0),
             Term("favouriteWinShare", favourite, 0.0, 0.5, 0.25),
         )
-    }
 
     fun race(r: Calibration.Run): Double = raceTerms(r).sumOf { it.penalty }
 
