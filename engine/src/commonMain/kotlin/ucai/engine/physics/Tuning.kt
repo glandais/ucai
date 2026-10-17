@@ -55,7 +55,7 @@ object Tuning {
     const val DURABILITY_K = 220.0
     /** Exponent: < 1, the loss grows fast at first, then slowly over a 4000–5000 kJ monument. */
     const val DURABILITY_N = 0.7
-    /** Work (kJ per kg) before durability costs anything (~200 kJ, the first half hour). */
+    /** Work (kJ per kg) before durability costs anything (~350 kJ, the first half hour or so). */
     const val DURABILITY_ONSET_KJ_PER_KG = 5.0
     /** Durability never takes more than this fraction of CP and W′. */
     const val DURABILITY_MAX_LOSS = 0.35

@@ -14,9 +14,11 @@ import kotlin.math.sqrt
  * The batch-1 form was quadratic, `(energyKj / (massKg · K))²`. It could not hit both calibration targets — a
  * domestique (durability 0.5, 70 kg) losing 10–15 % of CP at 2000 kJ and a protected leader (0.8) ~5 % at 1500 kJ —
  * and, worse, a monument costs every rider 4000–5000 kJ (≈ 170 W average for 7 h, like real power files), where the
- * quadratic form put the whole field at 25–35 %. A concave power law (N = 0.7) after a short onset (E0 = 3 kJ/kg, the
- * first ~30 min cost nothing) hits both targets (13.9 % and 4.0 %; 5 % for a durability-0.75 leader) and keeps
- * growing slowly: at the finish a leader (0.8, ~4500 kJ) is at ~9 %, a domestique (0.55, ~5000 kJ) at ~22 %.
+ * quadratic form put the whole field at 25–35 %. A concave power law (N = 0.7) after a short onset (E0 = 5 kJ/kg, the
+ * first ~30 min cost nothing) hits both targets (10.4 % and 3.2 %; 4 % for a durability-0.75 leader) and keeps
+ * growing slowly: at the finish a leader (0.8, ~4500 kJ) is at ~8 %, a domestique (0.55, ~5000 kJ) at ~19 %.
+ * (Batch 2 had E0 = 3, K = 185: 13.9 % / 4.0 %, and the controlling domestiques faded so much that the race slowed
+ * down over the day.)
  */
 object Fatigue {
     const val K = Tuning.DURABILITY_K
